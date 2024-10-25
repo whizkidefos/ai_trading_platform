@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}User Profile{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>User Profile</h2>
+    <ul>
+        <li><strong>Username:</strong> {{ user_profile.user.username }}</li>
+        <li><strong>Email:</strong> {{ user_profile.user.email }}</li>
+        <li><strong>Phone Number:</strong> {{ user_profile.phone_number }}</li>
+        <li><strong>Date of Birth:</strong> {{ user_profile.date_of_birth }}</li>
+        <li><strong>Verified:</strong> {{ user_profile.verified }}</li>
+    </ul>
+
+    <a href="{% url 'edit_profile' %}" class="btn btn-primary">Edit Profile</a>
+</div>
+{% endblock %}

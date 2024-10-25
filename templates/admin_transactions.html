@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Transactions{% endblock %}
+
+{% block content %}
+<h2>All Transactions</h2>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Time</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for transaction in transactions %}
+            <tr>
+                <td>{{ transaction.user.user.username }}</td>
+                <td>{{ transaction.transaction_type }}</td>
+                <td>${{ transaction.amount }}</td>
+                <td>{{ transaction.transaction_time }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h2>User Dashboard</h2>
+
+    <div class="row">
+        <div class="col-md-4">
+            <h4>Account Balance</h4>
+            <ul>
+                <li>USD: ${{ balance.balance_usd }}</li>
+                <li>GBP: £{{ balance.balance_gbp }}</li>
+                <h2>Deposit Funds</h2>
+                <a href="{% url 'paypal_deposit' %}" class="btn btn-primary">Deposit with PayPal</a>
+                <a href="{% url 'stripe_checkout' %}" class="btn btn-secondary">Deposit with Stripe</a>
+            </ul>
+        </div>
+
+        <div class="col-md-4">
+            <h4>Recent Trades</h4>
+            <ul>
+                {% for trade in recent_trades %}
+                    <li>{{ trade.trade_type }} {{ trade.asset }}: ${{ trade.amount }} (Profit/Loss: ${{ trade.profit_or_loss }})</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="col-md-4">
+            <h4>Transaction History</h4>
+            <ul>
+                {% for transaction in transaction_history %}
+                    <li>{{ transaction.transaction_type }} of ${{ transaction.amount }} on {{ transaction.transaction_time }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+<script src="https://js.stripe.com/v3/"></script>
+<button id="checkout-button" class="btn btn-primary">Pay with Stripe</button>
+
+<script>
+    var stripe = Stripe('{{ stripe_publishable_key }}');
+    var checkoutButton = document.getElementById('checkout-button');
+
+    checkoutButton.addEventListener('click', function () {
+        stripe.redirectToCheckout({ sessionId: '{{ session_id }}' });
+    });
+</script>

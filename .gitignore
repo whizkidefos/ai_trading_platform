@@ -1,0 +1,113 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django stuff:
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+db.sqlite3
+*.sqlite3-journal
+*.pkl
+*.log
+
+# If using Postgres:
+*.pgdata
+*.pgpass
+*.pgstat
+
+# Django migrations
+**/migrations/**
+
+# If using SQLite3
+*.sqlite3
+
+# Django stuff:
+*.pot
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+*.env
+
+# Django media and static files
+/static/
+media/
+site_media/
+
+# Local cache
+.cache
+*.swp
+.DS_Store
+
+# Unit test / coverage reports
+.coverage
+.tox/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# PyCharm
+.idea/
+
+# VSCode
+.vscode/
+
+# Virtual environment
+venv/
+ENV/
+env/
+venv.bak/
+
+# macOS
+.DS_Store
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# System files
+Thumbs.db
+ehthumbs.db
+
+# SASS cache files
+.sass-cache
+
+# Docker
+**/Dockerfile
+**/docker-compose*
+
+# Python egg files
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+share/
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# django-compressor
+compressor-output/

@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<h2>Admin Dashboard</h2>
+<p>Total USD Balance: ${{ total_balance }}</p>
+
+<h4>Recent Trades</h4>
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Asset</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Profit/Loss</th>
+            <th>Time</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for trade in recent_trades %}
+            <tr>
+                <td>{{ trade.user.user.username }}</td>
+                <td>{{ trade.asset }}</td>
+                <td>{{ trade.trade_type }}</td>
+                <td>${{ trade.amount }}</td>
+                <td>${{ trade.profit_or_loss }}</td>
+                <td>{{ trade.trade_time }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
