@@ -25,11 +25,13 @@ def register(request):
         form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save()
+            # Create a UserProfile instance if it exists
+            user_profile = UserProfile.objects.create(user=user)  # Creates the associated profile
             login(request, user)
             return redirect('user_dashboard')  # Redirect to dashboard or another page
     else:
         form = UserCreationForm()
-    return render(request, 'registration/register.html', {'form': form})
+    return render(request, 'registration/login.html', {'form': form})
 
 
 # Admin dashboard view
