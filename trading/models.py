@@ -3,6 +3,7 @@ from django.dispatch import receiver
 from django.contrib.auth.models import User
 from django.db import models
 
+
 # Model to extend the User model with additional trading-related fields
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -13,6 +14,7 @@ class UserProfile(models.Model):
     def __str__(self):
         return self.user.username
 
+
 # Model to track account balances in multiple currencies
 class AccountBalance(models.Model):
     user = models.OneToOneField(UserProfile, on_delete=models.CASCADE)
@@ -21,6 +23,7 @@ class AccountBalance(models.Model):
 
     def __str__(self):
         return f"{self.user.user.username}'s balance"
+
 
 # Model to track individual trades made by the AI
 class Trade(models.Model):
@@ -34,6 +37,7 @@ class Trade(models.Model):
     def __str__(self):
         return f"Trade by {self.user.user.username} on {self.trade_time}"
 
+
 # Model to track user transactions such as deposits, withdrawals, and trade activity
 class TransactionHistory(models.Model):
     TRANSACTION_CHOICES = [
@@ -41,7 +45,7 @@ class TransactionHistory(models.Model):
         ('withdrawal', 'Withdrawal'),
         ('trade', 'Trade'),
     ]
-    
+
     user = models.ForeignKey(UserProfile, on_delete=models.CASCADE)
     transaction_type = models.CharField(max_length=10, choices=TRANSACTION_CHOICES)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -56,6 +60,7 @@ def create_user_profile(sender, instance, created, **kwargs):
     if created:
         UserProfile.objects.create(user=instance)
         AccountBalance.objects.create(user=user_profile)
+
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):

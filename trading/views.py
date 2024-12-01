@@ -1,3 +1,5 @@
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
@@ -19,6 +21,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
 
 def register(request):
     if request.method == 'POST':
@@ -46,12 +49,12 @@ def admin_dashboard(request):
     }
     return render(request, 'admin_dashboard.html', context)
 
+
 # Admin transactions view
 @staff_member_required
 def admin_transactions(request):
     transactions = TransactionHistory.objects.all().order_by('-transaction_time')
     return render(request, 'admin_transactions.html', {'transactions': transactions})
-
 
 
 # Redirect to the dashboard when accessing the root URL
@@ -87,25 +90,25 @@ def profile(request):
 @login_required
 def edit_profile(request):
     user_profile = request.user.userprofile
-    
+
     if request.method == 'POST':
         user_form = UserForm(request.POST, instance=request.user)
         profile_form = UserProfileForm(request.POST, instance=user_profile)
-        
+
         if user_form.is_valid() and profile_form.is_valid():
             user_form.save()
             profile_form.save()
             return redirect('profile')  # Redirect to the profile page after saving
-    
+
     else:
         user_form = UserForm(instance=request.user)
         profile_form = UserProfileForm(instance=user_profile)
-    
+
     context = {
         'user_form': user_form,
         'profile_form': profile_form
     }
-    
+
     return render(request, 'edit_profile.html', context)
 
 
@@ -137,8 +140,8 @@ def execute_trade(request):
         balance = AccountBalance.objects.get(user=user_profile)
         balance.balance_usd -= amount
         balance.save()
-        
-        #Send real-time notification after trade execution
+
+        # Send real-time notification after trade execution
         send_trade_notification(request.user.username, trade_action, amount)
 
     elif trade_action == 'sell':
@@ -150,7 +153,7 @@ def execute_trade(request):
         balance = AccountBalance.objects.get(user=user_profile)
         balance.balance_usd += 10.0
         balance.save()
-        
+
         # Send real-time notification after trade execution
         send_trade_notification(request.user.username, trade_action, new_trade.profit_or_loss)
 
@@ -168,12 +171,13 @@ def send_trade_notification(username, trade_action, amount):
             'message': f'{username} executed a {trade_action} trade of ${amount}!'
         }
     )
- 
+
+
 # PayPal deposit view   
 def paypal_deposit(request):
     user_profile = request.user.userprofile
     paypal_dict = {
-        'business': 'liova2273@gmail.com',
+        'business': 'sb-910uy34436506@business.example.com',
         'amount': '50.00',  # Example amount
         'item_name': 'Deposit to Trading Account',
         'invoice': 'unique-invoice-id',  # Replace with a unique ID
@@ -202,6 +206,7 @@ def payment_success(request):
 
     return render(request, 'trading/payment_success.html', {'amount_credited': amount_credited})
 
+
 def payment_cancelled(request):
     return render(request, 'trading/payment_cancelled.html')
 
@@ -221,10 +226,11 @@ def stripe_checkout(request):
             'quantity': 1,
         }],
         mode='payment',
-        success_url='http://127.0.0.1:8000/payment-success/',
-        cancel_url='http://127.0.0.1:8000/payment-cancelled/',
+        success_url='http://127.0.0.1:8000/trading/payment-success/',
+        cancel_url='http://127.0.0.1:8000/trading/payment-cancelled/',
     )
     return render(request, 'trading/stripe_checkout.html', {'session_id': session.id})
+
 
 # Payment success view for Stripe
 @login_required

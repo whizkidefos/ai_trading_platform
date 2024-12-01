@@ -153,9 +153,9 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
 # PayPal settings
-PAYPAL_RECEIVER_EMAIL = 'liova2273@gmail.com'
+PAYPAL_RECEIVER_EMAIL = 'sb-910uy34436506@business.example.com'
 PAYPAL_TEST = True  # Set to False in production
 
 # Stripe settings
-STRIPE_SECRET_KEY = 'your-secret-key'
-STRIPE_PUBLISHABLE_KEY = 'your-publishable-key'
+STRIPE_SECRET_KEY = 'sk_test_51QQ915HTvy2d0hB9lhkY6FZYGHkpdYlUdtbpq7hPUJdqeHMknNew9AQ9PLDyF4G0ykoT6xoaI7VYWxKqtlKc1Bna00G9Wv5FLm'
+STRIPE_PUBLISHABLE_KEY = 'pk_test_51QQ915HTvy2d0hB9CuENo6L5HdVpqzwBAdbON3Xvp4jrBzPPbN2XYQlQT0CvaUVjUstl540GMlyaEVg6TYsXtLDL00ruXmg3Dh'

@@ -13,4 +13,6 @@ urlpatterns = [
     path('paypal/', include('paypal.standard.ipn.urls')),  # PayPal IPN URLs
     path('paypal-deposit/', views.paypal_deposit, name='paypal_deposit'),
     path('stripe-checkout/', views.stripe_checkout, name='stripe_checkout'),
+    path('payment-success/', views.payment_success, name='payment_success'),
+    path('payment-cancelled/', views.payment_cancelled, name='payment_cancelled'),
 ]
