@@ -1,6 +1,26 @@
 from celery import shared_task
 from .ai_trading import train_model, make_trade_prediction, get_market_data
 from .models import UserProfile, Trade, AccountBalance
+import logging
+
+logger = logging.getLogger('trading')
+
+
+@shared_task
+def automated_trading():
+    symbol = 'AAPL'
+    data = get_market_data(symbol)
+    data = apply_trading_strategy(data)
+
+    # Fetch latest signal
+    latest_signal = data['Signal'].iloc[-1]
+
+    if latest_signal == 1:  # Buy
+        execute_trade(symbol, 'buy', 100)  # Example: Buy $100 worth
+    elif latest_signal == -1:  # Sell
+        execute_trade(symbol, 'sell', 100)  # Example: Sell $100 worth
+
+    return "Trade executed"
 
 @shared_task
 def execute_trade_task():

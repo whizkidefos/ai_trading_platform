@@ -35,11 +35,6 @@ db.sqlite3
 .env
 *.env
 
-# Django media and static files
-/static/
-media/
-site_media/
-
 # Local cache
 .cache
 *.swp
@@ -111,3 +106,7 @@ celerybeat-schedule
 
 # django-compressor
 compressor-output/
+node_modules
+
+# env files
+.env

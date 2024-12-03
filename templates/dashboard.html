@@ -4,35 +4,688 @@
 <div class="container">
     <h2>User Dashboard</h2>
 
-    <div class="row">
+    <div class="row text-center mb-4">
         <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Account Balance</h5>
+                    <h3>${{ account_balance }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Total Trades</h5>
+                    <h3>{{ total_trades }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Total Transactions</h5>
+                    <h3>{{ total_transactions }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>    
+
+    <div class="row">
+        <div class="col-md-6">
             <h4>Account Balance</h4>
             <ul>
-                <li>USD: ${{ balance.balance_usd }}</li>
-                <li>GBP: £{{ balance.balance_gbp }}</li>
+                <li>USD: ${{ balance.balance_usd|default:"0.00" }}</li>
+                <li>Total Trades: {{ total_trades|default:"0" }}</li>
+                <li>Total Transactions: {{ total_transactions|default:"0" }}</li>
                 <h2>Deposit Funds</h2>
-                <a href="{% url 'paypal_deposit' %}" class="btn btn-primary">Deposit with PayPal</a>
-                <a href="{% url 'stripe_checkout' %}" class="btn btn-secondary">Deposit with Stripe</a>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#depositModal">Deposit Funds</button><br><br>
+
+                <h2>Execute Trade</h2>
+                <button id="trade-now" class="btn btn-primary">Execute Trade</button>
             </ul>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-md-6">
+            <form method="post" action="{% url 'handle_selected_asset' %}" id="asset-form">
+                {% csrf_token %}
+                <label for="asset">Select Asset:</label>
+                <select id="asset" name="asset" class="form-control">
+                    <option value="AAPL" selected>Apple (AAPL)</option>
+                    <option value="GOOGL">Google (GOOGL)</option>
+                    <option value="MSFT">Microsoft (MSFT)</option>
+                    <option value="TSLA">Tesla (TSLA)</option>
+                    <option value="AMZN">Amazon (AMZN)</option>
+                    <option value="BTC">Bitcoin (BTC)</option>
+                    <option value="ETH">Ethereum (ETH)</option>
+                </select>
+            </form>
+
+            <div id="asset-info" class="mt-3">
+                <div class="card">
+                    <div class="card-body">
+                        <h4 class="card-title">Asset Information</h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Current Price:</strong> <span id="asset-price">Loading...</span></p>
+                                <p><strong>Volume:</strong> <span id="asset-volume">Loading...</span></p>
+                                <p><strong>Trading Signal:</strong> <span id="trading-signal">Loading...</span></p>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Technical Indicators</h5>
+                                <p><strong>RSI:</strong> <span id="rsi-value">Loading...</span></p>
+                                <p><strong>MACD:</strong> <span id="macd-value">Loading...</span></p>
+                                <p><strong>SMA (5):</strong> <span id="sma5-value">Loading...</span></p>
+                                <p><strong>SMA (20):</strong> <span id="sma20-value">Loading...</span></p>
+                            </div>
+                        </div>
+                        <p class="text-muted"><small>Last Updated: <span id="last-update">Loading...</span></small></p>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                function updateAssetInfo() {
+                    const form = document.getElementById('asset-form');
+                    const formData = new FormData(form);
+
+                    fetch(form.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            console.error(data.error);
+                            return;
+                        }
+                        
+                        // Update asset information
+                        document.getElementById('asset-price').textContent = `$${data.last_price.toFixed(2)}`;
+                        document.getElementById('asset-volume').textContent = data.volume.toLocaleString();
+                        
+                        // Update trading signal with emoji and color
+                        const signalElement = document.getElementById('trading-signal');
+                        if (data.signal === 1) {
+                            signalElement.textContent = '🔥 Strong Buy';
+                            signalElement.className = 'text-success';
+                        } else if (data.signal === -1) {
+                            signalElement.textContent = '❄️ Strong Sell';
+                            signalElement.className = 'text-danger';
+                        } else {
+                            signalElement.textContent = '⚪ Hold';
+                            signalElement.className = 'text-warning';
+                        }
+                        
+                        // Update technical indicators
+                        document.getElementById('rsi-value').textContent = data.technical_indicators.rsi.toFixed(2);
+                        document.getElementById('macd-value').textContent = data.technical_indicators.macd.toFixed(2);
+                        document.getElementById('sma5-value').textContent = data.technical_indicators.sma5.toFixed(2);
+                        document.getElementById('sma20-value').textContent = data.technical_indicators.sma20.toFixed(2);
+                        
+                        document.getElementById('last-update').textContent = data.timestamp;
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                    });
+                }
+
+                // Update on asset selection change
+                document.getElementById('asset').addEventListener('change', updateAssetInfo);
+                
+                // Initial load with default asset (AAPL)
+                document.addEventListener('DOMContentLoaded', updateAssetInfo);
+            </script>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <!-- Stocks Chart -->
+        <div class="col-md-6 py-5">
+            <canvas id="stocksChart"></canvas>
+        </div>
+        <!-- Market Updates Chart -->
+        <div class="col-md-6 py-5">
+            <canvas id="marketUpdatesChart"></canvas>
+        </div>
+    </div>
+    <div class="row">
+        <!-- Highest-Selling Assets Chart -->
+        <div class="col-md-6 py-5">
+            <canvas id="highestSellingAssetsChart"></canvas>
+        </div>
+        <!-- Crypto Market Trends Chart -->
+        <div class="col-md-6 py-5">
+            <canvas id="cryptoMarketTrendsChart"></canvas>
+        </div>
+    </div>    
+
+    <div class="row">
+        <div class="col-md-6">
             <h4>Recent Trades</h4>
-            <ul>
-                {% for trade in recent_trades %}
-                    <li>{{ trade.trade_type }} {{ trade.asset }}: ${{ trade.amount }} (Profit/Loss: ${{ trade.profit_or_loss }})</li>
-                {% endfor %}
-            </ul>
+            <table class="table table-dark table-hover">
+                <thead>
+                    <tr>
+                        <th>Asset</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for trade in recent_trades %}
+                    <tr>
+                        <td>{{ trade.asset }}</td>
+                        <td>{{ trade.trade_type }}</td>
+                        <td>${{ trade.amount }}</td>
+                        <td>{{ trade.trade_time }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-
-        <div class="col-md-4">
+        <div class="col-md-6">
             <h4>Transaction History</h4>
-            <ul>
-                {% for transaction in transaction_history %}
-                    <li>{{ transaction.transaction_type }} of ${{ transaction.amount }} on {{ transaction.transaction_time }}</li>
-                {% endfor %}
-            </ul>
+            <table class="table table-dark table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaction in transactions %}
+                    <tr>
+                        <td>{{ transaction.id }}</td>
+                        <td>{{ transaction.transaction_type }}</td>
+                        <td>${{ transaction.amount }}</td>
+                        <td>{{ transaction.transaction_time }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+</div>
+
+<!-- News Ticker -->
+<div class="news-ticker-container">
+    <div class="news-ticker">
+        <div class="news-content">Loading news...</div>
+    </div>
+</div>
+
+<!-- Deposit Modal -->
+<div class="modal fade" id="depositModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Deposit Funds</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="depositAmount" class="form-label">Amount</label>
+                    <input type="number" class="form-control bg-dark text-white" id="depositAmount" min="10" step="0.01">
+                </div>
+                <div class="payment-methods">
+                    <button type="button" class="btn btn-outline-primary me-2" onclick="handleStripePayment()">
+                        <i class="fab fa-stripe me-2"></i>Pay with Stripe
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" onclick="initPayPalPayment()">
+                        <i class="fab fa-paypal me-2"></i>Pay with PayPal
+                    </button>
+                </div>
+                <div id="paypal-button-container" style="display: none;" class="mt-3"></div>
+                <div id="payment-message" class="alert mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- Withdrawal Modal -->
+<div class="modal fade" id="withdrawalModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">Withdraw Funds</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="withdrawalAmount" class="form-label">Amount</label>
+                    <input type="number" class="form-control bg-dark text-white" id="withdrawalAmount" min="10" step="0.01">
+                </div>
+                <button class="btn btn-primary w-100" onclick="handleWithdrawal()">
+                    Withdraw Funds
+                </button>
+                <div id="withdrawal-message" class="alert mt-3" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .news-ticker-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        padding: 10px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 1000;
+    }
+
+    .news-ticker {
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+    }
+
+    .news-content {
+        display: inline-block;
+        animation: ticker 60s linear infinite;
+        padding-left: 100%;
+    }
+
+    @keyframes ticker {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-100%); }
+    }
+
+    .modal-content {
+        background-color: var(--bg-primary);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-header, .modal-footer {
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .payment-methods {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 20px;
+    }
+
+    /* Reset animation when hovering */
+    .news-ticker:hover .news-content {
+        animation-play-state: paused;
+    }
+</style>
+
+<script src="https://js.stripe.com/v3/"></script>
+<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=USD"></script>
+<script>
+    // Initialize Stripe
+    const stripe = Stripe('{{ stripe_public_key }}');
+    let paypalButtonRendered = false;
+
+    // Handle Stripe Payment
+    async function handleStripePayment() {
+        const amount = document.getElementById('depositAmount').value;
+        if (!amount || amount < 10) {
+            showPaymentMessage('Please enter a valid amount (minimum $10)', 'error');
+            return;
+        }
+
+        try {
+            // Create payment intent
+            const response = await fetch('/api/process-deposit/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    amount: amount,
+                    payment_method: 'stripe'
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // Handle the card payment
+                const { error: stripeError } = await stripe.confirmCardPayment(data.client_secret, {
+                    payment_method: {
+                        card: elements.getElement('card'),
+                        billing_details: {
+                            name: '{{ request.user.get_full_name }}',
+                            email: '{{ request.user.email }}'
+                        }
+                    }
+                });
+
+                if (stripeError) {
+                    showPaymentMessage(stripeError.message, 'error');
+                } else {
+                    showPaymentMessage('Payment successful! Refreshing page...', 'success');
+                    setTimeout(() => location.reload(), 2000);
+                }
+            } else {
+                showPaymentMessage(data.message, 'error');
+            }
+        } catch (error) {
+            showPaymentMessage('An error occurred. Please try again.', 'error');
+            console.error('Payment error:', error);
+        }
+    }
+
+    // Initialize PayPal
+    function initPayPalPayment() {
+        const amount = document.getElementById('depositAmount').value;
+        if (!amount || amount < 10) {
+            showPaymentMessage('Please enter a valid amount (minimum $10)', 'error');
+            return;
+        }
+
+        const paypalContainer = document.getElementById('paypal-button-container');
+        paypalContainer.style.display = 'block';
+
+        if (!paypalButtonRendered) {
+            paypal.Buttons({
+                createOrder: function(data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            amount: {
+                                value: amount
+                            }
+                        }]
+                    });
+                },
+                onApprove: async function(data, actions) {
+                    const order = await actions.order.capture();
+                    
+                    // Process the successful PayPal payment on your server
+                    const response = await fetch('/api/process-deposit/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: JSON.stringify({
+                            amount: amount,
+                            payment_method: 'paypal',
+                            paypal_order_id: order.id
+                        })
+                    });
+
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        showPaymentMessage('Payment successful! Refreshing page...', 'success');
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        showPaymentMessage(result.message, 'error');
+                    }
+                }
+            }).render('#paypal-button-container');
+            paypalButtonRendered = true;
+        }
+    }
+
+    // Rest of your existing JavaScript code...
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Stocks Chart
+    const stocksCtx = document.getElementById('stocksChart').getContext('2d');
+    new Chart(stocksCtx, {
+        type: 'line',
+        data: {
+            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+            datasets: [{
+                label: 'Stock Prices',
+                data: [150, 200, 170, 220, 210, 230],
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                borderWidth: 1,
+                tension: 0.3
+            }]
+        }
+    });
+
+    // Market Updates Chart
+    const marketCtx = document.getElementById('marketUpdatesChart').getContext('2d');
+    new Chart(marketCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Tech', 'Finance', 'Healthcare', 'Energy', 'Consumer Goods'],
+            datasets: [{
+                label: 'Market Sector Growth',
+                data: [10, 15, 12, 8, 18],
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.2)',
+                    'rgba(54, 162, 235, 0.2)',
+                    'rgba(255, 206, 86, 0.2)',
+                    'rgba(75, 192, 192, 0.2)',
+                    'rgba(153, 102, 255, 0.2)'
+                ],
+                borderColor: [
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 206, 86, 1)',
+                    'rgba(75, 192, 192, 1)',
+                    'rgba(153, 102, 255, 1)'
+                ],
+                borderWidth: 1
+            }]
+        }
+    });
+
+    // Highest-Selling Assets Chart
+    const assetsCtx = document.getElementById('highestSellingAssetsChart').getContext('2d');
+    new Chart(assetsCtx, {
+        type: 'pie',
+        data: {
+            labels: ['AAPL', 'TSLA', 'AMZN', 'GOOGL', 'MSFT'],
+            datasets: [{
+                label: 'Assets',
+                data: [20, 25, 30, 15, 10],
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(153, 102, 255, 0.6)'
+                ]
+            }]
+        }
+    });
+
+    // Crypto Market Trends Chart
+    const cryptoCtx = document.getElementById('cryptoMarketTrendsChart').getContext('2d');
+    new Chart(cryptoCtx, {
+        type: 'line',
+        data: {
+            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], // Example months
+            datasets: [
+                {
+                    label: 'Bitcoin (BTC)',
+                    data: [32000, 35000, 30000, 37000, 36000, 39000], // Example data
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                },
+                {
+                    label: 'Ethereum (ETH)',
+                    data: [2000, 2100, 1900, 2300, 2200, 2400], // Example data
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                },
+                {
+                    label: 'Dogecoin (DOGE)',
+                    data: [0.2, 0.25, 0.18, 0.27, 0.26, 0.3], // Example data
+                    borderColor: 'rgba(255, 206, 86, 1)',
+                    backgroundColor: 'rgba(255, 206, 86, 0.2)',
+                    borderWidth: 2,
+                    tension: 0.3,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Month'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Price (USD)'
+                    }
+                }
+            }
+        }
+    });
+</script>
+
+<script>
+    // Trade updates
+    const tradeUpdates = document.getElementById('trade-updates');
+    const socket = new WebSocket('ws://' + window.location.host + '/ws/trades/');
+
+    socket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        const li = document.createElement('li');
+        li.classList.add('list-group-item', 'bg-dark', 'text-white');
+        li.textContent = data.message;
+        tradeUpdates.prepend(li);
+    };
+
+    // Trade execution
+    document.getElementById('trade-now').addEventListener('click', async () => {
+        const response = await fetch('/api/execute-trade/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+        });
+        if (response.ok) {
+            alert('Trade executed successfully!');
+        } else {
+            alert('Failed to execute trade.');
+        }
+    });
+
+</script>
+
+<script>
+    // News Ticker
+    async function fetchNews() {
+        try {
+            const response = await fetch('/api/trading-news/');
+            const data = await response.json();
+            if (data.status === 'success' && data.data && data.data.length > 0) {
+                const newsContent = data.data.map(article => 
+                    `<span class="me-4">📰 ${article.title}</span>`
+                ).join('');
+                document.querySelector('.news-content').innerHTML = newsContent;
+            } else {
+                document.querySelector('.news-content').innerHTML = 'No news available at the moment';
+            }
+        } catch (error) {
+            console.error('Error fetching news:', error);
+            document.querySelector('.news-content').innerHTML = 'Error loading news';
+        }
+    }
+
+    // Fetch news immediately and then every 5 minutes
+    fetchNews();
+    setInterval(fetchNews, 300000);
+
+    // Reset PayPal container when modal is closed
+    const depositModal = document.getElementById('depositModal');
+    depositModal.addEventListener('hidden.bs.modal', function () {
+        document.getElementById('paypal-button-container').style.display = 'none';
+        document.getElementById('payment-message').style.display = 'none';
+        document.getElementById('depositAmount').value = '';
+    });
+</script>
+
+<script>
+    // Handle Withdrawal
+    async function handleWithdrawal() {
+        const amount = document.getElementById('withdrawalAmount').value;
+        if (!amount || amount < 10) {
+            showWithdrawalMessage('Please enter a valid amount (minimum $10)', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/process-withdrawal/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ amount: amount })
+            });
+
+            const data = await response.json();
+            if (data.status === 'success') {
+                showWithdrawalMessage('Withdrawal processed successfully! Refreshing page...', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                showWithdrawalMessage(data.message, 'error');
+            }
+        } catch (error) {
+            showWithdrawalMessage('An error occurred. Please try again.', 'error');
+        }
+    }
+
+    function showPaymentMessage(message, type) {
+        const messageElement = document.getElementById('payment-message');
+        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
+        messageElement.textContent = message;
+        messageElement.style.display = 'block';
+    }
+
+    function showWithdrawalMessage(message, type) {
+        const messageElement = document.getElementById('withdrawal-message');
+        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
+        messageElement.textContent = message;
+        messageElement.style.display = 'block';
+    }
+
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+</script>
+
 {% endblock %}

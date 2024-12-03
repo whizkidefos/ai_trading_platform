@@ -1,0 +1,31 @@
+{
+    "name": "ai_trading_platform",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "sass:watch": "node-sass --watch static/sass/app.scss static/css/app.css",
+        "sass:build": "node-sass static/sass/app.scss static/css/app.css --output-style compressed",
+        "dev": "python dev.py"
+    },
+    "keywords": [],
+    "author": "Efosa Igbinehi",
+    "license": "ISC",
+    "devDependencies": {
+        "autoprefixer": "^10.4.17",
+        "concurrently": "^8.2.2",
+        "node-sass": "^9.0.0",
+        "postcss": "^8.4.35",
+        "postcss-cli": "^11.0.0",
+        "sass": "^1.80.6"
+    },
+    "browserslist": [
+        ">0.2%",
+        "not dead",
+        "not ie <= 11",
+        "not op_mini all"
+    ],
+    "dependencies": {
+        "chart.js": "^4.4.7"
+    }
+}

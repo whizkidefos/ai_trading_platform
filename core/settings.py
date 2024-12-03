@@ -1,19 +1,16 @@
 from pathlib import Path
+from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure--(=r$zu&w-ww3fg9$y(e=hwfierpl+5$5j33n=y@&9rh^ik%%i'
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
 
 
 # Application definition
@@ -27,8 +24,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'trading',
     'sass_processor',
+    'livereload',
+    'compressor',
     'channels',
     'paypal.standard.ipn',
+    'widget_tweaks',
 ]
 
 MIDDLEWARE = [
@@ -39,6 +39,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+    'sass_processor.finders.CssFinder',
+    'compressor.finders.CompressorFinder',
 ]
 
 ROOT_URLCONF = 'core.urls'
@@ -121,13 +128,30 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
 # SASS processor settings
-SASS_PROCESSOR_ROOT = BASE_DIR / 'static/sass'
+SASS_PROCESSOR_ROOT = BASE_DIR / 'static'
+SASS_PROCESSOR_INCLUDE_DIRS = [
+    BASE_DIR / 'static/sass',
+]
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Django Compressor settings
+COMPRESS_ROOT = STATIC_ROOT
+COMPRESS_ENABLED = True
+COMPRESS_OFFLINE = True  # Enable offline compression
+COMPRESS_PRECOMPILERS = (
+    ('text/x-scss', 'django_libsass.SassCompiler'),
+)
 
 # This is optional, but it can speed up local development
 SASS_PROCESSOR_ENABLED = True
+SASS_PROCESSOR_AUTO_INCLUDE = False
 
 # Where the compiled CSS will be stored
 SASS_OUTPUT_STYLE = 'compressed'
@@ -144,7 +168,10 @@ LOGOUT_REDIRECT_URL = '/'
 
 
 # Alpha Vantage API key
-ALPHA_VANTAGE_API_KEY = 'TV3Q79S3GZU0T579'
+ALPHA_VANTAGE_API_KEY = config('ALPHA_VANTAGE_API_KEY')
+
+# News API settings
+NEWS_API_KEY = config('NEWS_API_KEY')
 
 # Celery settings
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
@@ -153,9 +180,35 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
 
 # PayPal settings
-PAYPAL_RECEIVER_EMAIL = 'sb-910uy34436506@business.example.com'
-PAYPAL_TEST = True  # Set to False in production
+PAYPAL_RECEIVER_EMAIL = config('PAYPAL_RECEIVER_EMAIL')
+PAYPAL_TEST = config('PAYPAL_TEST', default=True, cast=bool)
+PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID')
 
 # Stripe settings
-STRIPE_SECRET_KEY = 'sk_test_51QQ915HTvy2d0hB9lhkY6FZYGHkpdYlUdtbpq7hPUJdqeHMknNew9AQ9PLDyF4G0ykoT6xoaI7VYWxKqtlKc1Bna00G9Wv5FLm'
-STRIPE_PUBLISHABLE_KEY = 'pk_test_51QQ915HTvy2d0hB9CuENo6L5HdVpqzwBAdbON3Xvp4jrBzPPbN2XYQlQT0CvaUVjUstl540GMlyaEVg6TYsXtLDL00ruXmg3Dh'
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY')
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY')
+
+# Logging settings
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/trading.log',
+        },
+    },
+    'loggers': {
+        # 'django': {
+        #     'handlers': ['file'],
+        #     'level': 'DEBUG',
+        #     'propagate': True,
+        # },
+        'trading': {
+            'handlers': ['file'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}

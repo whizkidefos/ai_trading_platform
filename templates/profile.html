@@ -1,18 +1,235 @@
 {% extends 'base.html' %}
 
-{% block title %}User Profile{% endblock %}
+{% block title %}Profile - {{ user_profile.user.get_full_name|default:user_profile.user.username }}{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>User Profile</h2>
-    <ul>
-        <li><strong>Username:</strong> {{ user_profile.user.username }}</li>
-        <li><strong>Email:</strong> {{ user_profile.user.email }}</li>
-        <li><strong>Phone Number:</strong> {{ user_profile.phone_number }}</li>
-        <li><strong>Date of Birth:</strong> {{ user_profile.date_of_birth }}</li>
-        <li><strong>Verified:</strong> {{ user_profile.verified }}</li>
-    </ul>
-
-    <a href="{% url 'edit_profile' %}" class="btn btn-primary">Edit Profile</a>
+<div class="profile-header mb-4">
+    <div class="row align-items-center">
+        <div class="col-auto">
+            <div class="avatar-wrapper">
+                <img src="{{ user_profile.get_avatar_url }}" alt="Profile Picture" class="profile-avatar">
+                {% if user_profile.verified %}
+                    <span class="verified-badge" title="Verified Account">
+                        <i class="fas fa-check-circle"></i>
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="col">
+            <h1 class="mb-1">{{ user_profile.user.get_full_name|default:user_profile.user.username }}</h1>
+            <p class="text-secondary mb-2">
+                <i class="fas fa-map-marker-alt me-2"></i>
+                {{ user_profile.city }}{% if user_profile.city and user_profile.country %}, {% endif %}{{ user_profile.country }}
+            </p>
+            <p class="mb-0">{{ user_profile.bio|default:"No bio provided" }}</p>
+        </div>
+        <div class="col-auto">
+            <a href="{% url 'edit_profile' %}" class="btn btn-primary">
+                <i class="fas fa-edit me-2"></i>Edit Profile
+            </a>
+        </div>
+    </div>
 </div>
+
+<div class="row">
+    <!-- Personal Information -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-user me-2"></i>Personal Information
+                </h5>
+                <div class="profile-info">
+                    <div class="info-item">
+                        <span class="label">Email</span>
+                        <span class="value">{{ user_profile.user.email }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Phone</span>
+                        <span class="value">{{ user_profile.phone_number|default:"Not provided" }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Date of Birth</span>
+                        <span class="value">{{ user_profile.date_of_birth|date:"F j, Y"|default:"Not provided" }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Member Since</span>
+                        <span class="value">{{ user_profile.user.date_joined|date:"F Y" }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trading Preferences -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-chart-line me-2"></i>Trading Preferences
+                </h5>
+                <div class="profile-info">
+                    <div class="info-item">
+                        <span class="label">Experience Level</span>
+                        <span class="value">
+                            <span class="badge bg-{{ user_profile.trading_experience }}">
+                                {{ user_profile.get_trading_experience_display }}
+                            </span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Risk Tolerance</span>
+                        <span class="value">
+                            <span class="badge bg-{{ user_profile.risk_tolerance }}">
+                                {{ user_profile.get_risk_tolerance_display }}
+                            </span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Preferred Currency</span>
+                        <span class="value">{{ user_profile.get_preferred_currency_display }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trading Statistics -->
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title mb-4">
+                    <i class="fas fa-chart-bar me-2"></i>Trading Statistics
+                </h5>
+                <div class="row g-4">
+                    <div class="col-md-3 col-6">
+                        <div class="stat-card">
+                            <div class="stat-value">{{ total_trades }}</div>
+                            <div class="stat-label">Total Trades</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="stat-card">
+                            <div class="stat-value text-success">{{ successful_trades }}</div>
+                            <div class="stat-label">Successful Trades</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="stat-card">
+                            <div class="stat-value">${{ total_profit|floatformat:2 }}</div>
+                            <div class="stat-label">Total Profit</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="stat-card">
+                            <div class="stat-value">{{ win_rate|floatformat:1 }}%</div>
+                            <div class="stat-label">Win Rate</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .profile-header {
+        padding: 2rem;
+        background-color: var(--dark-card);
+        border-radius: 12px;
+    }
+
+    .avatar-wrapper {
+        position: relative;
+        display: inline-block;
+    }
+
+    .profile-avatar {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 4px solid var(--accent-color);
+    }
+
+    .verified-badge {
+        position: absolute;
+        bottom: 5px;
+        right: 5px;
+        background: var(--accent-color);
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 14px;
+    }
+
+    .profile-info .info-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .profile-info .info-item:last-child {
+        border-bottom: none;
+    }
+
+    .profile-info .label {
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .profile-info .value {
+        color: var(--text-primary);
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .badge {
+        padding: 0.5em 1em;
+        font-weight: 500;
+    }
+
+    .badge.bg-beginner {
+        background-color: #10B981;
+    }
+
+    .badge.bg-intermediate {
+        background-color: #3B82F6;
+    }
+
+    .badge.bg-advanced {
+        background-color: #8B5CF6;
+    }
+
+    .badge.bg-conservative {
+        background-color: #10B981;
+    }
+
+    .badge.bg-moderate {
+        background-color: #F59E0B;
+    }
+
+    .badge.bg-aggressive {
+        background-color: #EF4444;
+    }
+</style>
 {% endblock %}

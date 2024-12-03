@@ -1,10 +1,13 @@
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
-
+import pandas as pd
 from alpha_vantage.timeseries import TimeSeries
 import pandas as pd
 from django.conf import settings
+
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 # Add exponential moving average (EMA)
@@ -82,7 +85,117 @@ def make_trade_prediction(model, data):
 
 
 # Fetch market data from Alpha Vantage
-def get_market_data(asset='AAPL'):
-    ts = TimeSeries(key=settings.ALPHA_VANTAGE_API_KEY, output_format='pandas')
-    data, _ = ts.get_intraday(symbol=asset, interval='60min', outputsize='full')
+def get_market_data(assets=['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'FB', 'NFLX', 'NVDA', 'PYPL', 'INTC', 'AMD', 'CSCO', 'ADBE', 'QCOM', 'AMAT', 'MU', 'AVGO', 'TXN', 'IBM', 'ADP', 'BTC-USD', 'ETH-USD', 'XRP-USD', 'LTC-USD', 'BCH-USD', 'BNB-USD', 'USDT-USD', 'LINK-USD', 'XLM-USD', 'ADA-USD', 'USDC-USD', 'EOS-USD', 'XMR-USD', 'TRX-USD', 'DASH-USD', 'ETC-USD', 'NEO-USD', 'XTZ-USD', 'ZEC-USD', 'DOGE-USD', 'VET-USD', 'BAT-USD', 'LSK-USD', 'ZRX-USD', 'OMG-USD', 'QTUM-USD', 'REP-USD', 'ALGO-USD', 'COMP-USD', 'KNC-USD', 'DAI-USD', 'YFI-USD', 'UMA-USD', 'REN-USD', 'BAL-USD', 'CRV-USD', 'SUSHI-USD', 'BAND-USD', 'OCEAN-USD', 'NMR-USD', 'MKR-USD', 'SNX-USD', 'LRC-USD', 'UNI-USD', 'YFII-USD', 'RUNE-USD', 'SOL-USD', 'SRM-USD', 'FTT-USD', 'BNT-USD', 'KAVA-USD', 'AKRO-USD', 'KSM-USD', 'RSR-USD', 'SAND-USD', 'MANA-USD', 'RLC-USD', 'ORN-USD', 'UTK-USD', 'STMX-USD', 'DNT-USD', 'RLY-USD', 'TRB-USD', 'LPT-USD', 'MLN-USD', 'FIL-USD', 'LUNA-USD', 'BOND-USD', '1INCH-USD', 'ENJ-USD', 'CHZ-USD', 'OGN-USD', 'RLC-USD', 'SNT-USD', 'GRT-USD', 'BTT-USD', 'SC-USD', 'DGB-USD', 'HOT-USD', 'RVN-USD', 'WIN-USD', 'STMX-USD', 'DENT-USD', 'DOCK-USD', 'CELR-USD',]):
+    data = {}
+    for asset in assets:
+        ts = TimeSeries(key=settings.ALPHA_VANTAGE_API_KEY, output_format='pandas')
+        data[asset], _ = ts.get_intraday(symbol=asset, interval='1min', outputsize='full')
     return data
+
+
+def apply_trading_strategy(data):
+    data['SMA_5'] = data['4. close'].rolling(window=5).mean()  # 5-period SMA
+    data['SMA_20'] = data['4. close'].rolling(window=20).mean()  # 20-period SMA
+
+    # Generate signals
+    data['Signal'] = 0
+    data['Signal'][data['SMA_5'] > data['SMA_20']] = 1  # Buy signal
+    data['Signal'][data['SMA_5'] <= data['SMA_20']] = -1  # Sell signal
+
+    return data
+
+
+def calculate_rsi(data, window=14):
+    delta = data['4. close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    data['RSI'] = 100 - (100 / (1 + rs))
+    return data
+
+
+def apply_rsi_strategy(data):
+    data = calculate_rsi(data)
+    data['Signal'] = 0
+    data.loc[data['RSI'] < 30, 'Signal'] = 1  # Buy signal
+    data.loc[data['RSI'] > 70, 'Signal'] = -1  # Sell signal
+    return data
+
+
+def calculate_bollinger_bands(data, window=20):
+    data['SMA'] = data['4. close'].rolling(window=window).mean()
+    data['Upper'] = data['SMA'] + 2 * data['4. close'].rolling(window=window).std()
+    data['Lower'] = data['SMA'] - 2 * data['4. close'].rolling(window=window).std()
+    return data
+
+
+def apply_bollinger_strategy(data):
+    data = calculate_bollinger_bands(data)
+    data['Signal'] = 0
+    data.loc[data['4. close'] < data['Lower'], 'Signal'] = 1  # Buy
+    data.loc[data['4. close'] > data['Upper'], 'Signal'] = -1  # Sell
+    return data
+
+
+def apply_combined_strategy(data):
+    """Apply a combined trading strategy using multiple technical indicators"""
+    try:
+        # Calculate technical indicators
+        data['SMA_5'] = data['4. close'].rolling(window=5).mean()
+        data['SMA_20'] = data['4. close'].rolling(window=20).mean()
+        
+        # RSI calculation
+        delta = data['4. close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        data['RSI'] = 100 - (100 / (1 + rs))
+        
+        # MACD
+        exp1 = data['4. close'].ewm(span=12, adjust=False).mean()
+        exp2 = data['4. close'].ewm(span=26, adjust=False).mean()
+        data['MACD'] = exp1 - exp2
+        data['Signal_line'] = data['MACD'].ewm(span=9, adjust=False).mean()
+        
+        # Generate trading signals (1 for buy, -1 for sell, 0 for hold)
+        data['signal'] = 0  # Initialize signal column
+        
+        # Buy signals
+        buy_condition = (
+            (data['SMA_5'] > data['SMA_20']) &  # Golden cross
+            (data['RSI'] < 70) &  # Not overbought
+            (data['MACD'] > data['Signal_line'])  # MACD crossover
+        )
+        
+        # Sell signals
+        sell_condition = (
+            (data['SMA_5'] < data['SMA_20']) &  # Death cross
+            (data['RSI'] > 30) &  # Not oversold
+            (data['MACD'] < data['Signal_line'])  # MACD crossover
+        )
+        
+        # Apply signals
+        data.loc[buy_condition, 'signal'] = 1
+        data.loc[sell_condition, 'signal'] = -1
+        
+        # Forward fill any NaN values in the signal column
+        data['signal'] = data['signal'].fillna(0)
+        
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error in apply_combined_strategy: {str(e)}")
+        # Return the original data with a neutral signal if strategy application fails
+        data['signal'] = 0
+        return data
+
+
+def notify_websocket(message):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        'trade_updates',
+        {
+            'type': 'trade_update',
+            'message': message,
+        },
+    )

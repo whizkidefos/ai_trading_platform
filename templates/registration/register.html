@@ -1,10 +1,259 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base.html' %}
 
-<h2>Register</h2>
+{% block title %}Register - Trading Platform{% endblock %}
 
-<form method="post" action="{% url 'register' %}">
-  {% csrf_token %} {{ form.as_p }}
-  <button type="submit" class="btn btn-primary">Register</button>
+{% block content %}
+<div class="text-center mb-4">
+    <i class="fas fa-user-plus fa-3x mb-3 text-primary"></i>
+    <h2 class="mb-3">Create Your Trading Account</h2>
+    <p class="text-secondary">Join our platform and start your trading journey</p>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+    {% csrf_token %}
+    {% if form.errors %}
+    <div class="alert alert-danger">
+        <i class="fas fa-exclamation-circle me-2"></i>Please correct the errors below
+        <ul class="mb-0 mt-2">
+            {% for field in form %}
+                {% for error in field.errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Basic Information -->
+        <div class="col-md-12 mb-3">
+            <h5 class="mb-3">Basic Information</h5>
+            
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent text-secondary border-end-0">
+                        <i class="fas fa-user"></i>
+                    </span>
+                    <input type="text" name="username" class="form-control bg-transparent text-white border-start-0" id="username" required>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent text-secondary border-end-0">
+                        <i class="fas fa-envelope"></i>
+                    </span>
+                    <input type="email" name="email" class="form-control bg-transparent text-white border-start-0" id="email" required>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="first_name" class="form-label">First Name</label>
+                    <input type="text" name="first_name" class="form-control bg-transparent text-white" id="first_name" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="last_name" class="form-label">Last Name</label>
+                    <input type="text" name="last_name" class="form-control bg-transparent text-white" id="last_name" required>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="date_of_birth" class="form-label">Date of Birth</label>
+                <input type="date" name="date_of_birth" class="form-control bg-transparent text-white" id="date_of_birth" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="phone_number" class="form-label">Phone Number</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent text-secondary border-end-0">
+                        <i class="fas fa-phone"></i>
+                    </span>
+                    <input type="tel" name="phone_number" class="form-control bg-transparent text-white border-start-0" id="phone_number">
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Information -->
+        <div class="col-md-12 mb-3">
+            <h5 class="mb-3">Profile Information</h5>
+
+            <div class="mb-3">
+                <label for="avatar" class="form-label">Profile Picture</label>
+                <div class="input-group">
+                    <input type="file" name="avatar" class="form-control bg-transparent text-white" id="avatar" accept="image/*">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="bio" class="form-label">Bio</label>
+                <textarea name="bio" class="form-control bg-transparent text-white" id="bio" rows="3"></textarea>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="country" class="form-label">Country</label>
+                    <input type="text" name="country" class="form-control bg-transparent text-white" id="country">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="city" class="form-label">City</label>
+                    <input type="text" name="city" class="form-control bg-transparent text-white" id="city">
+                </div>
+            </div>
+        </div>
+
+        <!-- Trading Preferences -->
+        <div class="col-12 mb-3">
+            <h5 class="mb-3">Trading Preferences</h5>
+            
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="trading_experience" class="form-label">Trading Experience</label>
+                    <select name="trading_experience" class="form-select bg-transparent text-white" id="trading_experience" required>
+                        <option value="">Select experience level</option>
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="risk_tolerance" class="form-label">Risk Tolerance</label>
+                    <select name="risk_tolerance" class="form-select bg-transparent text-white" id="risk_tolerance" required>
+                        <option value="">Select risk level</option>
+                        <option value="conservative">Conservative</option>
+                        <option value="moderate">Moderate</option>
+                        <option value="aggressive">Aggressive</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="preferred_currency" class="form-label">Preferred Currency</label>
+                    <select name="preferred_currency" class="form-select bg-transparent text-white" id="preferred_currency" required>
+                        <option value="">Select currency</option>
+                        <option value="USD">US Dollar (USD)</option>
+                        <option value="GBP">British Pound (GBP)</option>
+                        <option value="EUR">Euro (EUR)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Password Section -->
+        <div class="col-12 mb-4">
+            <h5 class="mb-3">Security</h5>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.password1.id_for_label }}" class="form-label">Password</label>
+                    <div class="password-field">
+                        {{ form.password1|add_class:"form-control" }}
+                        <button type="button" class="password-toggle" onclick="togglePassword(this)">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    {% if form.password1.errors %}
+                        {% for error in form.password1.errors %}
+                            <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.password2.id_for_label }}" class="form-label">Confirm Password</label>
+                    <div class="password-field">
+                        {{ form.password2|add_class:"form-control" }}
+                        <button type="button" class="password-toggle" onclick="togglePassword(this)">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    {% if form.password2.errors %}
+                        {% for error in form.password2.errors %}
+                            <div class="text-danger">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary w-100 mb-3">
+        <i class="fas fa-user-plus me-2"></i>Create Account
+    </button>
+    
+    <div class="text-center">
+        <p class="text-secondary">
+            Already have an account? 
+            <a href="{% url 'login' %}" class="text-primary text-decoration-none">Login here</a>
+        </p>
+    </div>
 </form>
 
+<style>
+    .form-control, .input-group-text, .form-select {
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .form-control:focus, .form-select:focus {
+        background-color: transparent;
+        border-color: var(--accent-color);
+        box-shadow: none;
+        color: white;
+    }
+    
+    .input-group-text {
+        border-radius: 8px 0 0 8px;
+    }
+    
+    .form-control {
+        border-radius: 0 8px 8px 0;
+    }
+    
+    .form-control:not(.border-start-0) {
+        border-radius: 8px;
+    }
+
+    .form-select {
+        border-radius: 8px;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    }
+    
+    .form-select option {
+        background-color: var(--dark-card);
+        color: white;
+    }
+    
+    .alert {
+        background-color: rgba(220, 38, 38, 0.1);
+        border: 1px solid rgba(220, 38, 38, 0.2);
+        color: #ef4444;
+    }
+    
+    .invalid-feedback {
+        color: #ef4444;
+    }
+
+    h5 {
+        color: var(--accent-color);
+        font-weight: 600;
+    }
+    
+    .password-field {
+        position: relative;
+    }
+    
+    .password-toggle {
+        position: absolute;
+        top: 50%;
+        right: 10px;
+        transform: translateY(-50%);
+        background-color: transparent;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+    }
+    
+    .password-toggle i {
+        color: #fff;
+    }
+</style>
 {% endblock %}
