@@ -25,7 +25,7 @@
             <div class="card bg-warning text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Transactions</h5>
-                    <h3>{{ total_transactions }}</h3>
+                    <h3>{{ total_transactions|default:"0" }}</h3>
                 </div>
             </div>
         </div>
@@ -38,11 +38,15 @@
                 <li>USD: ${{ balance.balance_usd|default:"0.00" }}</li>
                 <li>Total Trades: {{ total_trades|default:"0" }}</li>
                 <li>Total Transactions: {{ total_transactions|default:"0" }}</li>
-                <h2>Deposit Funds</h2>
-                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#depositModal">Deposit Funds</button><br><br>
-
-                <h2>Execute Trade</h2>
-                <button id="trade-now" class="btn btn-primary">Execute Trade</button>
+                <div class="mt-3">
+                    <h2>Account Actions</h2>
+                    <button class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#depositModal">
+                        <i class="fas fa-money-bill-wave"></i> Deposit Funds
+                    </button>
+                    <button class="btn btn-success mb-2" data-bs-toggle="modal" data-bs-target="#withdrawModal">
+                        <i class="fas fa-money-bill-transfer"></i> Withdraw Earnings
+                    </button>
+                </div>
             </ul>
         </div>
 
@@ -51,20 +55,45 @@
                 {% csrf_token %}
                 <label for="asset">Select Asset:</label>
                 <select id="asset" name="asset" class="form-control">
-                    <option value="AAPL" selected>Apple (AAPL)</option>
-                    <option value="GOOGL">Google (GOOGL)</option>
-                    <option value="MSFT">Microsoft (MSFT)</option>
-                    <option value="TSLA">Tesla (TSLA)</option>
-                    <option value="AMZN">Amazon (AMZN)</option>
-                    <option value="BTC">Bitcoin (BTC)</option>
-                    <option value="ETH">Ethereum (ETH)</option>
+                    <optgroup label="US Stocks">
+                        <option value="AAPL" selected>Apple Inc. (AAPL)</option>
+                        <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
+                        <option value="MSFT">Microsoft Corporation (MSFT)</option>
+                        <option value="TSLA">Tesla, Inc. (TSLA)</option>
+                        <option value="AMZN">Amazon.com Inc. (AMZN)</option>
+                        <option value="META">Meta Platforms Inc. (META)</option>
+                        <option value="NVDA">NVIDIA Corporation (NVDA)</option>
+                        <option value="JPM">JPMorgan Chase & Co. (JPM)</option>
+                        <option value="V">Visa Inc. (V)</option>
+                        <option value="WMT">Walmart Inc. (WMT)</option>
+                    </optgroup>
+                    <optgroup label="Cryptocurrencies">
+                        <option value="BTC">Bitcoin (BTC)</option>
+                        <option value="ETH">Ethereum (ETH)</option>
+                        <option value="BNB">Binance Coin (BNB)</option>
+                        <option value="XRP">Ripple (XRP)</option>
+                        <option value="ADA">Cardano (ADA)</option>
+                        <option value="SOL">Solana (SOL)</option>
+                        <option value="DOT">Polkadot (DOT)</option>
+                    </optgroup>
+                    <optgroup label="ETFs">
+                        <option value="SPY">SPDR S&P 500 ETF (SPY)</option>
+                        <option value="QQQ">Invesco QQQ Trust (QQQ)</option>
+                        <option value="VTI">Vanguard Total Stock Market ETF (VTI)</option>
+                        <option value="VOO">Vanguard S&P 500 ETF (VOO)</option>
+                    </optgroup>
                 </select>
             </form>
 
             <div id="asset-info" class="mt-3">
                 <div class="card">
                     <div class="card-body">
-                        <h4 class="card-title">Asset Information</h4>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h4 class="card-title mb-0">Asset Information</h4>
+                            <button class="btn btn-sm btn-outline-primary" onclick="updateAssetInfo()">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
                         <div class="row">
                             <div class="col-md-6">
                                 <p><strong>Current Price:</strong> <span id="asset-price">Loading...</span></p>
@@ -85,9 +114,21 @@
             </div>
 
             <script>
+                let updateTimeout;
+
                 function updateAssetInfo() {
                     const form = document.getElementById('asset-form');
                     const formData = new FormData(form);
+                    
+                    // Show loading state
+                    document.getElementById('asset-price').textContent = 'Loading...';
+                    document.getElementById('asset-volume').textContent = 'Loading...';
+                    document.getElementById('trading-signal').textContent = 'Loading...';
+                    document.getElementById('rsi-value').textContent = 'Loading...';
+                    document.getElementById('macd-value').textContent = 'Loading...';
+                    document.getElementById('sma5-value').textContent = 'Loading...';
+                    document.getElementById('sma20-value').textContent = 'Loading...';
+                    document.getElementById('last-update').textContent = 'Loading...';
 
                     fetch(form.action, {
                         method: 'POST',
@@ -133,12 +174,73 @@
                     });
                 }
 
-                // Update on asset selection change
-                document.getElementById('asset').addEventListener('change', updateAssetInfo);
+                // Update on asset selection change with debounce
+                document.getElementById('asset').addEventListener('change', function() {
+                    clearTimeout(updateTimeout);
+                    updateTimeout = setTimeout(updateAssetInfo, 300); // 300ms debounce
+                });
                 
                 // Initial load with default asset (AAPL)
                 document.addEventListener('DOMContentLoaded', updateAssetInfo);
+                
+                // Auto-refresh every 60 seconds
+                setInterval(updateAssetInfo, 60000);
             </script>
+        </div>
+    </div>
+
+    <!-- Automated Trading Controls -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card bg-dark text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h4 class="card-title mb-0">Automated Trading</h4>
+                        <div>
+                            <button id="startTradingBtn" class="btn btn-success" style="display: none;">
+                                <i class="fas fa-play"></i> Start Trading
+                            </button>
+                            <button id="stopTradingBtn" class="btn btn-danger" style="display: none;">
+                                <i class="fas fa-stop"></i> Stop Trading
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-md-3">
+                            <div class="card bg-secondary">
+                                <div class="card-body">
+                                    <h5 class="card-title">Trading Status</h5>
+                                    <p class="card-text" id="tradingStatus">Checking...</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-secondary">
+                                <div class="card-body">
+                                    <h5 class="card-title">Trades Today</h5>
+                                    <p class="card-text" id="tradesToday">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-secondary">
+                                <div class="card-body">
+                                    <h5 class="card-title">Profit Today</h5>
+                                    <p class="card-text" id="profitToday">$0.00</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-secondary">
+                                <div class="card-body">
+                                    <h5 class="card-title">Last Trade</h5>
+                                    <p class="card-text" id="lastTradeTime">Never</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -227,48 +329,144 @@
         <div class="modal-content bg-dark text-white">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title">Deposit Funds</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label for="depositAmount" class="form-label">Amount</label>
+                    <label for="depositAmount" class="form-label">Amount (USD)</label>
                     <input type="number" class="form-control bg-dark text-white" id="depositAmount" min="10" step="0.01">
                 </div>
-                <div class="payment-methods">
-                    <button type="button" class="btn btn-outline-primary me-2" onclick="handleStripePayment()">
-                        <i class="fab fa-stripe me-2"></i>Pay with Stripe
-                    </button>
-                    <button type="button" class="btn btn-outline-primary" onclick="initPayPalPayment()">
-                        <i class="fab fa-paypal me-2"></i>Pay with PayPal
-                    </button>
-                </div>
-                <div id="paypal-button-container" style="display: none;" class="mt-3"></div>
+                <div id="paypal-button-container"></div>
                 <div id="payment-message" class="alert mt-3" style="display: none;"></div>
-            </div>
-            <div class="modal-footer border-secondary">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Withdrawal Modal -->
-<div class="modal fade" id="withdrawalModal" tabindex="-1">
+<!-- PayPal Script -->
+<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=USD"></script>
+<script>
+    let depositModal = document.getElementById('depositModal');
+    
+    depositModal.addEventListener('shown.bs.modal', function () {
+        initializePayPal();
+    });
+
+    function initializePayPal() {
+        const amount = document.getElementById('depositAmount').value;
+        if (!amount || amount < 10) {
+            showNotification('error', 'Please enter an amount of at least $10');
+            return;
+        }
+
+        // Clear existing PayPal buttons
+        document.getElementById('paypal-button-container').innerHTML = '';
+
+        paypal.Buttons({
+            style: {
+                layout: 'vertical',
+                color:  'blue',
+                shape:  'rect',
+                label:  'paypal'
+            },
+
+            createOrder: function(data, actions) {
+                const amount = document.getElementById('depositAmount').value;
+                return actions.order.create({
+                    purchase_units: [{
+                        amount: {
+                            value: amount
+                        }
+                    }]
+                });
+            },
+
+            onApprove: function(data, actions) {
+                return actions.order.capture().then(function(details) {
+                    // Send the payment details to your server
+                    const amount = document.getElementById('depositAmount').value;
+                    fetch('/api/process-deposit/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        },
+                        body: JSON.stringify({
+                            payment_id: details.id,
+                            amount: amount,
+                            status: 'completed'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            showNotification('success', `Successfully deposited $${amount}`);
+                            $('#depositModal').modal('hide');
+                            updateBalance();  // Update the displayed balance
+                        } else {
+                            showNotification('error', data.message || 'Failed to process deposit');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('error', 'Failed to process deposit');
+                    });
+                });
+            },
+
+            onError: function(err) {
+                console.error('PayPal Error:', err);
+                showNotification('error', 'PayPal payment failed');
+            }
+        }).render('#paypal-button-container');
+    }
+
+    // Update deposit amount listener
+    document.getElementById('depositAmount').addEventListener('change', function() {
+        initializePayPal();
+    });
+
+    // Reset PayPal container when modal is closed
+    depositModal.addEventListener('hidden.bs.modal', function () {
+        document.getElementById('paypal-button-container').innerHTML = '';
+        document.getElementById('depositAmount').value = '';
+    });
+</script>
+
+<!-- Withdraw Modal -->
+<div class="modal fade" id="withdrawModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content bg-dark text-white">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title">Withdraw Funds</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title">Withdraw Earnings</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label for="withdrawalAmount" class="form-label">Amount</label>
-                    <input type="number" class="form-control bg-dark text-white" id="withdrawalAmount" min="10" step="0.01">
+                    <label for="withdrawAmount" class="form-label">Amount</label>
+                    <input type="number" class="form-control bg-dark text-white" id="withdrawAmount" min="10" step="0.01">
                 </div>
-                <button class="btn btn-primary w-100" onclick="handleWithdrawal()">
+                <div class="mb-3">
+                    <label for="withdrawMethod" class="form-label">Withdrawal Method</label>
+                    <select class="form-select bg-dark text-white" id="withdrawMethod">
+                        <option value="bank">Bank Transfer</option>
+                        <option value="paypal">PayPal</option>
+                    </select>
+                </div>
+                <div id="bankDetails" class="mb-3">
+                    <label for="bankAccount" class="form-label">Bank Account</label>
+                    <input type="text" class="form-control bg-dark text-white" id="bankAccount" placeholder="Enter bank account number">
+                </div>
+                <div id="paypalDetails" class="mb-3" style="display: none;">
+                    <label for="paypalEmail" class="form-label">PayPal Email</label>
+                    <input type="email" class="form-control bg-dark text-white" id="paypalEmail" placeholder="Enter PayPal email">
+                </div>
+                <button type="button" class="btn btn-primary" onclick="processWithdrawal()">
                     Withdraw Funds
                 </button>
-                <div id="withdrawal-message" class="alert mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
@@ -326,118 +524,6 @@
 </style>
 
 <script src="https://js.stripe.com/v3/"></script>
-<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=USD"></script>
-<script>
-    // Initialize Stripe
-    const stripe = Stripe('{{ stripe_public_key }}');
-    let paypalButtonRendered = false;
-
-    // Handle Stripe Payment
-    async function handleStripePayment() {
-        const amount = document.getElementById('depositAmount').value;
-        if (!amount || amount < 10) {
-            showPaymentMessage('Please enter a valid amount (minimum $10)', 'error');
-            return;
-        }
-
-        try {
-            // Create payment intent
-            const response = await fetch('/api/process-deposit/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: JSON.stringify({
-                    amount: amount,
-                    payment_method: 'stripe'
-                })
-            });
-
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                // Handle the card payment
-                const { error: stripeError } = await stripe.confirmCardPayment(data.client_secret, {
-                    payment_method: {
-                        card: elements.getElement('card'),
-                        billing_details: {
-                            name: '{{ request.user.get_full_name }}',
-                            email: '{{ request.user.email }}'
-                        }
-                    }
-                });
-
-                if (stripeError) {
-                    showPaymentMessage(stripeError.message, 'error');
-                } else {
-                    showPaymentMessage('Payment successful! Refreshing page...', 'success');
-                    setTimeout(() => location.reload(), 2000);
-                }
-            } else {
-                showPaymentMessage(data.message, 'error');
-            }
-        } catch (error) {
-            showPaymentMessage('An error occurred. Please try again.', 'error');
-            console.error('Payment error:', error);
-        }
-    }
-
-    // Initialize PayPal
-    function initPayPalPayment() {
-        const amount = document.getElementById('depositAmount').value;
-        if (!amount || amount < 10) {
-            showPaymentMessage('Please enter a valid amount (minimum $10)', 'error');
-            return;
-        }
-
-        const paypalContainer = document.getElementById('paypal-button-container');
-        paypalContainer.style.display = 'block';
-
-        if (!paypalButtonRendered) {
-            paypal.Buttons({
-                createOrder: function(data, actions) {
-                    return actions.order.create({
-                        purchase_units: [{
-                            amount: {
-                                value: amount
-                            }
-                        }]
-                    });
-                },
-                onApprove: async function(data, actions) {
-                    const order = await actions.order.capture();
-                    
-                    // Process the successful PayPal payment on your server
-                    const response = await fetch('/api/process-deposit/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': getCookie('csrftoken')
-                        },
-                        body: JSON.stringify({
-                            amount: amount,
-                            payment_method: 'paypal',
-                            paypal_order_id: order.id
-                        })
-                    });
-
-                    const result = await response.json();
-                    if (result.status === 'success') {
-                        showPaymentMessage('Payment successful! Refreshing page...', 'success');
-                        setTimeout(() => location.reload(), 2000);
-                    } else {
-                        showPaymentMessage(result.message, 'error');
-                    }
-                }
-            }).render('#paypal-button-container');
-            paypalButtonRendered = true;
-        }
-    }
-
-    // Rest of your existing JavaScript code...
-</script>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     // Stocks Chart
@@ -614,17 +700,66 @@
         }
     }
 
-    // Fetch news immediately and then every 5 minutes
+    // Fetch news immediately and then every hour
     fetchNews();
-    setInterval(fetchNews, 300000);
+    setInterval(fetchNews, 3600000); // 1 hour = 3600000 milliseconds
 
-    // Reset PayPal container when modal is closed
-    const depositModal = document.getElementById('depositModal');
-    depositModal.addEventListener('hidden.bs.modal', function () {
-        document.getElementById('paypal-button-container').style.display = 'none';
-        document.getElementById('payment-message').style.display = 'none';
-        document.getElementById('depositAmount').value = '';
+    // Handle withdrawal method change
+    document.getElementById('withdrawMethod').addEventListener('change', function() {
+        const bankDetails = document.getElementById('bankDetails');
+        const paypalDetails = document.getElementById('paypalDetails');
+        
+        if (this.value === 'bank') {
+            bankDetails.style.display = 'block';
+            paypalDetails.style.display = 'none';
+        } else {
+            bankDetails.style.display = 'none';
+            paypalDetails.style.display = 'block';
+        }
     });
+
+    // Process withdrawal
+    function processWithdrawal() {
+        const amount = document.getElementById('withdrawAmount').value;
+        const method = document.getElementById('withdrawMethod').value;
+        const bankAccount = document.getElementById('bankAccount').value;
+        const paypalEmail = document.getElementById('paypalEmail').value;
+
+        if (!amount || amount < 10) {
+            showNotification('error', 'Minimum withdrawal amount is $10');
+            return;
+        }
+
+        const withdrawalData = {
+            amount: amount,
+            method: method,
+            bank_account: method === 'bank' ? bankAccount : null,
+            paypal_email: method === 'paypal' ? paypalEmail : null
+        };
+
+        fetch('/api/process-withdrawal/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify(withdrawalData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showNotification('success', 'Withdrawal request processed successfully');
+                $('#withdrawModal').modal('hide');
+                updateTradingStatus(); // Refresh balance display
+            } else {
+                showNotification('error', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Failed to process withdrawal');
+        });
+    }
 </script>
 
 <script>

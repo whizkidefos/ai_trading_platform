@@ -8,8 +8,9 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login, authenticate
 from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
+from django.views.decorators.http import require_http_methods
 
-from .models import AccountBalance, Trade, TransactionHistory, UserProfile
+from .models import AccountBalance, Trade, TransactionHistory, UserProfile, Transaction
 from .automated_trading import AutomatedTrading
 from .ai_trading import train_model, make_trade_prediction, apply_combined_strategy
 from .forms import UserRegistrationForm, UserProfileForm, UserForm
@@ -118,7 +119,10 @@ def home(request):
 @login_required
 def user_dashboard(request):
     user_profile = request.user.userprofile
-    account_balance = AccountBalance.objects.get(user=user_profile)
+    try:
+        account_balance = AccountBalance.objects.get(user=user_profile)
+    except AccountBalance.DoesNotExist:
+        account_balance = AccountBalance.objects.create(user=user_profile)
     
     # Get trading metrics
     trades = Trade.objects.filter(user=user_profile)
@@ -159,22 +163,96 @@ def user_dashboard(request):
 
 @login_required
 def start_automated_trading(request):
-    if request.method == 'POST':
+    """Start automated trading for the user"""
+    try:
         user_profile = request.user.userprofile
+        
+        # Check if user has sufficient balance
+        account_balance = AccountBalance.objects.get(user=user_profile)
+        if account_balance.balance_usd < 20:  # Minimum balance requirement
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Insufficient balance. Minimum $20 required to start automated trading.'
+            }, status=400)
+
+        # Set trading status to active
+        user_profile.is_trading_active = True
+        user_profile.save()
+
+        # Start the automated trading task
         automated_trading = AutomatedTrading(user_profile)
-        asyncio.create_task(automated_trading.start_trading())
-        return JsonResponse({'status': 'success', 'message': 'Automated trading started'})
-    return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+        automated_trading.start()
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading started successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error starting automated trading: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Failed to start automated trading'
+        }, status=500)
 
 
 @login_required
 def stop_automated_trading(request):
-    if request.method == 'POST':
+    """Stop automated trading for the user"""
+    try:
         user_profile = request.user.userprofile
+        
+        # Set trading status to inactive
+        user_profile.is_trading_active = False
+        user_profile.save()
+
+        # Stop the automated trading task
         automated_trading = AutomatedTrading(user_profile)
-        asyncio.create_task(automated_trading.stop_trading())
-        return JsonResponse({'status': 'success', 'message': 'Automated trading stopped'})
-    return JsonResponse({'status': 'error', 'message': 'Invalid request method'})
+        automated_trading.stop()
+
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading stopped successfully'
+        })
+    except Exception as e:
+        logger.error(f"Error stopping automated trading: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Failed to stop automated trading'
+        }, status=500)
+
+
+@login_required
+def get_trading_status(request):
+    """Get current trading status and performance metrics"""
+    try:
+        user_profile = request.user.userprofile
+        account_balance = AccountBalance.objects.get(user=user_profile)
+        
+        # Get today's trades and performance
+        today = datetime.now().date()
+        today_trades = Trade.objects.filter(
+            user=user_profile,
+            trade_time__date=today
+        )
+        
+        total_profit = today_trades.aggregate(
+            total_profit=Sum('profit_or_loss')
+        )['total_profit'] or 0
+
+        return JsonResponse({
+            'status': 'success',
+            'is_trading_active': user_profile.is_trading_active,
+            'current_balance': float(account_balance.balance_usd),
+            'trades_today': today_trades.count(),
+            'profit_today': float(total_profit),
+            'last_trade_time': today_trades.last().trade_time.isoformat() if today_trades.exists() else None
+        })
+    except Exception as e:
+        logger.error(f"Error getting trading status: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Failed to get trading status'
+        }, status=500)
 
 
 @login_required
@@ -478,32 +556,57 @@ def get_trading_news(request):
 
 @login_required
 def process_deposit(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
-    
-    data = json.loads(request.body)
-    amount = data.get("amount")
-    payment_method = data.get("payment_method")
-    
-    if payment_method == "stripe":
-        payment_method_id = data.get("payment_method_id")
-        result = process_stripe_payment(amount, payment_method_id=payment_method_id)
-        
-        if result["status"] == "success":
-            # Update user balance
-            profile = request.user.userprofile
-            profile.balance += Decimal(amount)
-            profile.save()
-            
-            # Record transaction
-            TransactionHistory.objects.create(
-                user=request.user,
-                transaction_type="deposit",
-                amount=amount,
-                status="completed"
-            )
-    
-    return JsonResponse(result)
+    """Process a deposit via PayPal"""
+    try:
+        data = json.loads(request.body)
+        amount = Decimal(data.get('amount'))
+        payment_id = data.get('payment_id')
+        status = data.get('status')
+
+        if not all([amount, payment_id, status]):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Missing required payment information'
+            }, status=400)
+
+        if amount < Decimal('10.00'):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Minimum deposit amount is $10'
+            }, status=400)
+
+        # Record the transaction
+        transaction = Transaction.objects.create(
+            user=request.user.userprofile,
+            transaction_type='DEPOSIT',
+            amount=amount,
+            method='PAYPAL',
+            status='COMPLETED',
+            details=f'PayPal payment ID: {payment_id}'
+        )
+
+        # Update account balance
+        account_balance = AccountBalance.objects.get(user=request.user.userprofile)
+        account_balance.balance_usd += amount
+        account_balance.save()
+
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Successfully deposited ${amount}',
+            'new_balance': str(account_balance.balance_usd)
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid request data'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error processing deposit: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Failed to process deposit'
+        }, status=500)
 
 @login_required
 def process_withdrawal_view(request):
@@ -518,3 +621,92 @@ def process_withdrawal_view(request):
     
     result = process_withdrawal(request.user.userprofile, amount)
     return JsonResponse(result)
+
+@login_required
+@require_http_methods(['POST'])
+def process_withdrawal(request):
+    """Process withdrawal request to bank or PayPal"""
+    try:
+        data = json.loads(request.body)
+        amount = Decimal(data.get('amount'))
+        method = data.get('method')
+        bank_account = data.get('bank_account')
+        paypal_email = data.get('paypal_email')
+
+        user_profile = request.user.userprofile
+        account_balance = AccountBalance.objects.get(user=user_profile)
+
+        # Validate amount
+        if amount < Decimal('10.00'):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Minimum withdrawal amount is $10'
+            }, status=400)
+
+        if amount > account_balance.balance_usd:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Insufficient balance for withdrawal'
+            }, status=400)
+
+        # Validate withdrawal method details
+        if method == 'bank' and not bank_account:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Bank account number is required'
+            }, status=400)
+        elif method == 'paypal' and not paypal_email:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'PayPal email is required'
+            }, status=400)
+
+        # Process withdrawal based on method
+        if method == 'bank':
+            # Implement bank transfer logic here
+            # For now, just deduct the balance
+            account_balance.balance_usd -= amount
+            account_balance.save()
+
+            # Create withdrawal transaction record
+            Transaction.objects.create(
+                user=user_profile,
+                transaction_type='WITHDRAWAL',
+                amount=amount,
+                method='BANK',
+                status='COMPLETED',
+                details=f'Bank transfer to account {bank_account}'
+            )
+        else:  # PayPal
+            # Implement PayPal transfer logic here
+            # For now, just deduct the balance
+            account_balance.balance_usd -= amount
+            account_balance.save()
+
+            # Create withdrawal transaction record
+            Transaction.objects.create(
+                user=user_profile,
+                transaction_type='WITHDRAWAL',
+                amount=amount,
+                method='PAYPAL',
+                status='COMPLETED',
+                details=f'PayPal transfer to {paypal_email}'
+            )
+
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Successfully processed withdrawal of ${amount}',
+            'new_balance': str(account_balance.balance_usd)
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid request data'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error processing withdrawal: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Failed to process withdrawal'
+        }, status=500)

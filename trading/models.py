@@ -128,6 +128,43 @@ class TransactionHistory(models.Model):
         return f"{self.transaction_type} - {self.amount} ({self.status})"
 
 
+# Model to handle withdrawals and deposits
+class Transaction(models.Model):
+    TRANSACTION_TYPES = [
+        ('DEPOSIT', 'Deposit'),
+        ('WITHDRAWAL', 'Withdrawal'),
+        ('TRADE', 'Trade'),
+    ]
+    
+    PAYMENT_METHODS = [
+        ('BANK', 'Bank Transfer'),
+        ('PAYPAL', 'PayPal'),
+        ('CARD', 'Credit/Debit Card'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    user = models.ForeignKey(UserProfile, on_delete=models.CASCADE)
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    method = models.CharField(max_length=20, choices=PAYMENT_METHODS)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    details = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.transaction_type} - {self.amount} USD - {self.status}"
+
+    class Meta:
+        ordering = ['-created_at']
+
+
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
     if created:

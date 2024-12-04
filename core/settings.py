@@ -1,5 +1,6 @@
 from pathlib import Path
 from decouple import config, Csv
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -187,6 +188,11 @@ PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID')
 # Stripe settings
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY')
+
+# Alpaca Trading API Configuration
+ALPACA_API_KEY = os.getenv('ALPACA_API_KEY')
+ALPACA_SECRET_KEY = os.getenv('ALPACA_SECRET_KEY')
+ALPACA_BASE_URL = os.getenv('ALPACA_BASE_URL', 'https://api.alpaca.markets')  # Use 'https://paper-api.alpaca.markets' for paper trading
 
 # Logging settings
 LOGGING = {
