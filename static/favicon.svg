@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>AI Trading Platform</title>
+    <defs>
+        <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#2563EB;stop-opacity:1" />
+        </linearGradient>
+    </defs>
+    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <rect fill="url(#grad1)" x="0" y="0" width="512" height="512" rx="128"/>
+        <g transform="translate(64, 64)" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+            <!-- Trading chart line -->
+            <path d="M0,256 L96,160 L192,224 L288,96 L384,32"/>
+            <!-- Data points -->
+            <circle fill="#FFFFFF" cx="0" cy="256" r="24"/>
+            <circle fill="#FFFFFF" cx="96" cy="160" r="24"/>
+            <circle fill="#FFFFFF" cx="192" cy="224" r="24"/>
+            <circle fill="#FFFFFF" cx="288" cy="96" r="24"/>
+            <circle fill="#FFFFFF" cx="384" cy="32" r="24"/>
+            <!-- AI circuit pattern -->
+            <path d="M0,320 L384,320" opacity="0.5"/>
+            <path d="M192,288 L192,352" opacity="0.5"/>
+            <circle cx="192" cy="320" r="16" opacity="0.5"/>
+        </g>
+    </g>
+</svg>

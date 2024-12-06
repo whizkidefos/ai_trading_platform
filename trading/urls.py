@@ -1,6 +1,7 @@
 from django.urls import path, include
 from . import views
 from paypal.standard.ipn import views as paypal_views
+from .views import StartAutomatedTradingView, StopAutomatedTradingView, TradingStatusView
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -15,13 +16,14 @@ urlpatterns = [
     path('handle-asset/', views.handle_selected_asset, name='handle_selected_asset'),
     
     # New automated trading endpoints
-    path('api/start-trading/', views.start_automated_trading, name='start_trading'),
-    path('api/stop-trading/', views.stop_automated_trading, name='stop_trading'),
-    path('api/trading-status/', views.get_trading_status, name='trading_status'),
+    path('api/start-automated-trading/', StartAutomatedTradingView.as_view(), name='start_automated_trading'),
+    path('api/stop-automated-trading/', StopAutomatedTradingView.as_view(), name='stop_automated_trading'),
+    path('api/trading-status/', TradingStatusView.as_view(), name='trading_status'),
     path('api/manual-trade/', views.manual_trade, name='manual_trade'),
     path('api/market-data/', views.get_market_data, name='market_data'),
     path('api/trading-news/', views.get_trading_news, name='trading_news'),
     path('api/process-deposit/', views.process_deposit, name='process_deposit'),
+    path('api/get-balance/', views.get_balance, name='get_balance'),
     path('api/process-withdrawal/', views.process_withdrawal, name='process_withdrawal'),
     path('admin-dashboard/', views.admin_dashboard, name='admin_dashboard'),
     path('admin-transactions/', views.admin_transactions, name='admin_transactions'),

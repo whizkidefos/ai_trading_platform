@@ -3,12 +3,17 @@ from channels.layers import get_channel_layer
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login, authenticate
 from django.contrib import messages
 from django.contrib.auth.forms import AuthenticationForm
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+import json
+import logging
+from decimal import Decimal
 
 from .models import AccountBalance, Trade, TransactionHistory, UserProfile, Transaction
 from .automated_trading import AutomatedTrading
@@ -20,15 +25,15 @@ import stripe
 import pandas as pd
 from alpha_vantage.timeseries import TimeSeries
 from django.conf import settings
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework import status
 
 from django.http import HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 
-import requests, logging
+import requests
 import asyncio
-import json
-from decimal import Decimal
-from .payment_utils import process_stripe_payment, process_withdrawal
 from datetime import datetime
 
 logger = logging.getLogger('trading')
@@ -147,6 +152,7 @@ def user_dashboard(request):
         'user': request.user,
         'stripe_public_key': settings.STRIPE_PUBLISHABLE_KEY,
         'paypal_client_id': settings.PAYPAL_CLIENT_ID,
+        'paypal_receiver_email': settings.PAYPAL_RECEIVER_EMAIL,
         'account_balance': account_balance.balance_usd,
         'balance': account_balance,
         'total_trades': total_trades,
@@ -403,52 +409,77 @@ def handle_selected_asset(request):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 
-def execute_trade(request, symbol, trade_type, amount):
-    user_profile = request.user.userprofile
+@login_required
+def execute_trade(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST method is allowed'}, status=405)
 
-    # Fetch market data
-    market_data = get_market_data('AAPL')
-
-    # Train or load the AI model
-    model = train_model(market_data)
-
-    # Make a prediction (buy or sell)
-    trade_action = make_trade_prediction(model, market_data)
-
-    # Execute the trade (buy or sell)
-    if trade_action == 'buy':
-        amount = 100  # Example trade amount
-        new_trade = Trade(user=user_profile, asset='AAPL', trade_type='buy', amount=amount, profit_or_loss=0.0)
-        new_trade.save()
-
-        # Deduct from balance
-        balance = AccountBalance.objects.get(user=user_profile)
-        balance.balance_usd -= amount
-        balance.save()
-
-        # Send real-time notification after trade execution
-        send_trade_notification(request.user.username, trade_action, amount)
-
-    elif trade_action == 'sell':
-        # Assume we sold for a profit of 10 (just an example)
-        new_trade = Trade(user=user_profile, asset='AAPL', trade_type='sell', amount=0, profit_or_loss=10.0)
-        new_trade.save()
-
-        # Add to balance
-        balance = AccountBalance.objects.get(user=user_profile)
-        balance.balance_usd += 10.0
-        balance.save()
-
-        # Send real-time notification after trade execution
-        send_trade_notification(request.user.username, trade_action, new_trade.profit_or_loss)
-        
     try:
-        # Log the trade execution
-        logger.info(f"Executed {trade_type} trade for {symbol} with amount {amount}")
-    except Exception as e:
-        logger.error(f"Failed to execute trade for {symbol}: {e}")
+        data = json.loads(request.body)
+        asset = data.get('asset')
+        amount = Decimal(str(data.get('amount', 0)))
+        action = data.get('action')
 
-    return render(request, 'execution_result.html', {'trade_action': trade_action})
+        if not all([asset, amount, action]) or amount <= 0:
+            return JsonResponse({'error': 'Invalid trade parameters'}, status=400)
+
+        user_profile = request.user.userprofile
+        balance = AccountBalance.objects.get(user=user_profile)
+
+        # Validate sufficient balance for buy orders
+        if action == 'buy' and balance.balance_usd < amount:
+            return JsonResponse({'error': 'Insufficient balance'}, status=400)
+
+        # Execute the trade
+        new_trade = Trade.objects.create(
+            user=user_profile,
+            asset=asset,
+            trade_type=action,
+            amount=amount,
+            profit_or_loss=Decimal('0.0')  # This would be calculated based on actual execution price
+        )
+
+        # Update balance
+        if action == 'buy':
+            balance.balance_usd -= amount
+        else:  # sell
+            balance.balance_usd += amount
+        balance.save()
+
+        # Send real-time notification
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            "trades",
+            {
+                "type": "trade_message",
+                "message": {
+                    "type": "trade_update",
+                    "data": {
+                        "trade_id": new_trade.id,
+                        "asset": asset,
+                        "action": action,
+                        "amount": str(amount),
+                        "timestamp": new_trade.timestamp.isoformat(),
+                        "new_balance": str(balance.balance_usd)
+                    }
+                }
+            }
+        )
+
+        return JsonResponse({
+            'status': 'success',
+            'trade_id': new_trade.id,
+            'message': f'{action.capitalize()} trade executed successfully',
+            'new_balance': str(balance.balance_usd)
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except AccountBalance.DoesNotExist:
+        return JsonResponse({'error': 'User account balance not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Trade execution error: {str(e)}")
+        return JsonResponse({'error': 'Internal server error'}, status=500)
 
 
 # Helper function to send WebSocket notifications
@@ -555,58 +586,152 @@ def get_trading_news(request):
         return JsonResponse({"status": "error", "message": str(e)})
 
 @login_required
+@require_http_methods(["POST"])
 def process_deposit(request):
-    """Process a deposit via PayPal"""
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    
     try:
+        logger.debug("Starting deposit process")
+        logger.debug(f"Request body: {request.body.decode()}")
+        
+        # Parse request data
         data = json.loads(request.body)
-        amount = Decimal(data.get('amount'))
+        order_id = data.get('order_id')
         payment_id = data.get('payment_id')
+        amount = Decimal(str(data.get('amount', '0')))
         status = data.get('status')
+        details = data.get('details', {})
 
-        if not all([amount, payment_id, status]):
+        logger.info(f"Processing deposit - Order ID: {order_id}, Payment ID: {payment_id}, Amount: {amount}, Status: {status}")
+        
+        # Validate required fields
+        if not all([order_id, payment_id, amount, status]):
+            logger.error("Missing required fields")
             return JsonResponse({
                 'status': 'error',
                 'message': 'Missing required payment information'
             }, status=400)
 
-        if amount < Decimal('10.00'):
+        # Validate payment status
+        if status != 'COMPLETED':
+            logger.error(f"Invalid payment status: {status}")
             return JsonResponse({
                 'status': 'error',
-                'message': 'Minimum deposit amount is $10'
+                'message': 'Payment not completed'
             }, status=400)
 
-        # Record the transaction
-        transaction = Transaction.objects.create(
-            user=request.user.userprofile,
-            transaction_type='DEPOSIT',
-            amount=amount,
-            method='PAYPAL',
-            status='COMPLETED',
-            details=f'PayPal payment ID: {payment_id}'
-        )
+        # Check for duplicate payment
+        if Transaction.objects.filter(Q(order_id=order_id) | Q(payment_id=payment_id)).exists():
+            logger.warning(f"Duplicate payment detected - Order ID: {order_id}, Payment ID: {payment_id}")
+            return JsonResponse({
+                'status': 'error',
+                'message': 'This payment has already been processed'
+            }, status=400)
 
-        # Update account balance
-        account_balance = AccountBalance.objects.get(user=request.user.userprofile)
-        account_balance.balance_usd += amount
-        account_balance.save()
+        try:
+            # Start transaction
+            with transaction.atomic():
+                user_profile = request.user.userprofile
+                
+                # Update account balance
+                account_balance = AccountBalance.objects.select_for_update().get(user=user_profile)
+                previous_balance = account_balance.balance_usd
+                account_balance.balance_usd += amount
+                account_balance.save()
 
+                logger.info(f"Updated balance from ${previous_balance} to ${account_balance.balance_usd}")
+
+                # Create transaction record
+                transaction_record = Transaction.objects.create(
+                    user=user_profile,
+                    transaction_type='DEPOSIT',
+                    amount=amount,
+                    method='PAYPAL',
+                    status='COMPLETED',
+                    order_id=order_id,
+                    payment_id=payment_id,
+                    details=json.dumps(details)
+                )
+
+                logger.info(f"Created transaction record: {transaction_record.id}")
+
+                # Create transaction history record
+                TransactionHistory.objects.create(
+                    user=user_profile,
+                    transaction_type='DEPOSIT',
+                    amount=amount,
+                    status='completed',
+                    description=f'PayPal deposit (Order ID: {order_id})'
+                )
+
+                # Send WebSocket notification
+                try:
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        "trades",
+                        {
+                            "type": "trade_message",
+                            "message": {
+                                "type": "balance_update",
+                                "data": {
+                                    "new_balance": str(account_balance.balance_usd),
+                                    "transaction_id": transaction_record.id
+                                }
+                            }
+                        }
+                    )
+                except Exception as ws_error:
+                    logger.error(f"WebSocket notification error: {str(ws_error)}")
+                    # Continue processing even if WebSocket fails
+
+                return JsonResponse({
+                    'status': 'success',
+                    'message': f'Successfully deposited ${amount}',
+                    'new_balance': str(account_balance.balance_usd)
+                })
+
+        except AccountBalance.DoesNotExist:
+            logger.error(f"Account balance not found for user {request.user.id}")
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Account balance not found'
+            }, status=404)
+            
+        except Exception as db_error:
+            logger.error(f"Database error: {str(db_error)}", exc_info=True)
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Database error occurred while processing payment'
+            }, status=500)
+
+    except json.JSONDecodeError as json_error:
+        logger.error(f"JSON decode error: {str(json_error)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid payment data format'
+        }, status=400)
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in process_deposit: {str(e)}", exc_info=True)
+        return JsonResponse({
+            'status': 'error',
+            'message': 'An error occurred while processing your deposit'
+        }, status=500)
+
+@login_required
+def get_balance(request):
+    try:
+        trading_account = AccountBalance.objects.get(user=request.user.userprofile)
         return JsonResponse({
             'status': 'success',
-            'message': f'Successfully deposited ${amount}',
-            'new_balance': str(account_balance.balance_usd)
+            'balance': float(trading_account.balance_usd)
         })
-
-    except json.JSONDecodeError:
+    except AccountBalance.DoesNotExist:
         return JsonResponse({
             'status': 'error',
-            'message': 'Invalid request data'
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Error processing deposit: {str(e)}")
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Failed to process deposit'
-        }, status=500)
+            'message': 'Trading account not found'
+        })
 
 @login_required
 def process_withdrawal_view(request):
@@ -710,3 +835,57 @@ def process_withdrawal(request):
             'status': 'error',
             'message': 'Failed to process withdrawal'
         }, status=500)
+
+from django.utils.decorators import method_decorator
+from django.contrib.auth.decorators import login_required
+
+@method_decorator(login_required, name='dispatch')
+class StartAutomatedTradingView(APIView):
+    def post(self, request):
+        try:
+            # Print request data for debugging
+            print("Request data:", request.data)
+            
+            # Get data from request.data instead of parsing JSON
+            min_amount = request.data.get('min_trade_amount', 10)
+            max_amount = request.data.get('max_trade_amount', 100)
+            
+            print(f"Min amount: {min_amount}, Max amount: {max_amount}")
+            
+            # Save automated trading settings to user profile
+            profile = request.user.userprofile
+            profile.automated_trading_enabled = True
+            profile.min_trade_amount = Decimal(str(min_amount))
+            profile.max_trade_amount = Decimal(str(max_amount))
+            profile.save()
+            
+            return Response({'status': 'success', 'message': 'Automated trading enabled'})
+        except Exception as e:
+            print(f"Error in StartAutomatedTradingView: {str(e)}")
+            return Response({'status': 'error', 'message': str(e)}, status=400)
+
+@method_decorator(login_required, name='dispatch')
+class StopAutomatedTradingView(APIView):
+    def post(self, request):
+        try:
+            profile = request.user.userprofile
+            profile.automated_trading_enabled = False
+            profile.save()
+            return Response({'status': 'success', 'message': 'Automated trading disabled'})
+        except Exception as e:
+            print(f"Error in StopAutomatedTradingView: {str(e)}")
+            return Response({'status': 'error', 'message': str(e)}, status=400)
+
+@method_decorator(login_required, name='dispatch')
+class TradingStatusView(APIView):
+    def get(self, request):
+        try:
+            profile = request.user.userprofile
+            return Response({
+                'auto_trading_enabled': profile.automated_trading_enabled,
+                'min_trade_amount': float(profile.min_trade_amount),
+                'max_trade_amount': float(profile.max_trade_amount)
+            })
+        except Exception as e:
+            print(f"Error in TradingStatusView: {str(e)}")
+            return Response({'status': 'error', 'message': str(e)}, status=400)

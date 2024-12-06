@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="container">
@@ -9,7 +10,7 @@
             <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h5 class="card-title">Account Balance</h5>
-                    <h3>${{ account_balance }}</h3>
+                    <h3 id="accountBalance">${{ account_balance }}</h3>
                 </div>
             </div>
         </div>
@@ -29,163 +30,559 @@
                 </div>
             </div>
         </div>
-    </div>    
+    </div>
+    
+    <!-- Market Overview Section -->
+    <div class="row mb-4">
+        <!-- Price Chart -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Price Chart</h5>
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Trading Volume -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Trading Volume</h5>
+                    <canvas id="volumeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <!-- Technical Indicators -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Technical Indicators</h5>
+                    <canvas id="technicalChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Profit/Loss Chart -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Profit/Loss Analysis</h5>
+                    <canvas id="profitLossChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="row">
         <div class="col-md-6">
             <h4>Account Balance</h4>
-            <ul>
-                <li>USD: ${{ balance.balance_usd|default:"0.00" }}</li>
-                <li>Total Trades: {{ total_trades|default:"0" }}</li>
-                <li>Total Transactions: {{ total_transactions|default:"0" }}</li>
-                <div class="mt-3">
-                    <h2>Account Actions</h2>
-                    <button class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#depositModal">
-                        <i class="fas fa-money-bill-wave"></i> Deposit Funds
-                    </button>
-                    <button class="btn btn-success mb-2" data-bs-toggle="modal" data-bs-target="#withdrawModal">
-                        <i class="fas fa-money-bill-transfer"></i> Withdraw Earnings
-                    </button>
+            <p>USD: ${{ balance.balance_usd|default:"0.00" }}</p>
+            <p>Total Trades: {{ total_trades|default:"0" }}</p>
+            <p>Total Transactions: {{ total_transactions|default:"0" }}</p>
+        </div>
+                
+        <div class="col-md-6 mt-3">
+            <h2>Account Actions</h2>
+            <button class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#depositModal">
+                <i class="fas fa-money-bill-wave"></i> Deposit Funds
+            </button>
+            <button class="btn btn-success mb-2" data-bs-toggle="modal" data-bs-target="#withdrawModal">
+                <i class="fas fa-money-bill-transfer"></i> Withdraw Earnings
+            </button>
+        </div>
+    </div>
+
+    <div class="row">
+        <form method="post" action="{% url 'handle_selected_asset' %}" id="asset-form">
+            {% csrf_token %}
+            <label for="asset">Select Asset:</label>
+            <select id="asset" name="asset" class="form-control">
+                <optgroup label="US Stocks">
+                    <option value="AAPL" selected>Apple Inc. (AAPL)</option>
+                    <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
+                    <option value="MSFT">Microsoft Corporation (MSFT)</option>
+                    <option value="TSLA">Tesla, Inc. (TSLA)</option>
+                    <option value="AMZN">Amazon.com Inc. (AMZN)</option>
+                    <option value="META">Meta Platforms Inc. (META)</option>
+                    <option value="NVDA">NVIDIA Corporation (NVDA)</option>
+                    <option value="JPM">JPMorgan Chase & Co. (JPM)</option>
+                    <option value="V">Visa Inc. (V)</option>
+                    <option value="WMT">Walmart Inc. (WMT)</option>
+                </optgroup>
+                <optgroup label="Cryptocurrencies">
+                    <option value="BTC">Bitcoin (BTC)</option>
+                    <option value="ETH">Ethereum (ETH)</option>
+                    <option value="BNB">Binance Coin (BNB)</option>
+                    <option value="XRP">Ripple (XRP)</option>
+                    <option value="ADA">Cardano (ADA)</option>
+                    <option value="SOL">Solana (SOL)</option>
+                    <option value="DOT">Polkadot (DOT)</option>
+                </optgroup>
+                <optgroup label="ETFs">
+                    <option value="SPY">SPDR S&P 500 ETF (SPY)</option>
+                    <option value="QQQ">Invesco QQQ Trust (QQQ)</option>
+                    <option value="VTI">Vanguard Total Stock Market ETF (VTI)</option>
+                    <option value="VOO">Vanguard S&P 500 ETF (VOO)</option>
+                </optgroup>
+            </select>
+        </form>
+
+        <div id="asset-info" class="mt-3">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="card-title mb-0">Asset Information</h4>
+                        <button class="btn btn-sm btn-outline-primary" onclick="updateAssetInfo()">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Current Price:</strong> <span id="asset-price">Loading...</span></p>
+                            <p><strong>Volume:</strong> <span id="asset-volume">Loading...</span></p>
+                            <p><strong>Trading Signal:</strong> <span id="trading-signal">Loading...</span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h5>Technical Indicators</h5>
+                            <p><strong>RSI:</strong> <span id="rsi-value">Loading...</span></p>
+                            <p><strong>MACD:</strong> <span id="macd-value">Loading...</span></p>
+                            <p><strong>SMA (5):</strong> <span id="sma5-value">Loading...</span></p>
+                            <p><strong>SMA (20):</strong> <span id="sma20-value">Loading...</span></p>
+                        </div>
+                    </div>
+                    <p class="text-muted"><small>Last Updated: <span id="last-update">Loading...</span></small></p>
                 </div>
-            </ul>
+            </div>
         </div>
 
-        <div class="col-md-6">
-            <form method="post" action="{% url 'handle_selected_asset' %}" id="asset-form">
-                {% csrf_token %}
-                <label for="asset">Select Asset:</label>
-                <select id="asset" name="asset" class="form-control">
-                    <optgroup label="US Stocks">
-                        <option value="AAPL" selected>Apple Inc. (AAPL)</option>
-                        <option value="GOOGL">Alphabet Inc. (GOOGL)</option>
-                        <option value="MSFT">Microsoft Corporation (MSFT)</option>
-                        <option value="TSLA">Tesla, Inc. (TSLA)</option>
-                        <option value="AMZN">Amazon.com Inc. (AMZN)</option>
-                        <option value="META">Meta Platforms Inc. (META)</option>
-                        <option value="NVDA">NVIDIA Corporation (NVDA)</option>
-                        <option value="JPM">JPMorgan Chase & Co. (JPM)</option>
-                        <option value="V">Visa Inc. (V)</option>
-                        <option value="WMT">Walmart Inc. (WMT)</option>
-                    </optgroup>
-                    <optgroup label="Cryptocurrencies">
-                        <option value="BTC">Bitcoin (BTC)</option>
-                        <option value="ETH">Ethereum (ETH)</option>
-                        <option value="BNB">Binance Coin (BNB)</option>
-                        <option value="XRP">Ripple (XRP)</option>
-                        <option value="ADA">Cardano (ADA)</option>
-                        <option value="SOL">Solana (SOL)</option>
-                        <option value="DOT">Polkadot (DOT)</option>
-                    </optgroup>
-                    <optgroup label="ETFs">
-                        <option value="SPY">SPDR S&P 500 ETF (SPY)</option>
-                        <option value="QQQ">Invesco QQQ Trust (QQQ)</option>
-                        <option value="VTI">Vanguard Total Stock Market ETF (VTI)</option>
-                        <option value="VOO">Vanguard S&P 500 ETF (VOO)</option>
-                    </optgroup>
-                </select>
-            </form>
+        {% comment %} <div class="modern-switch">
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="autoTradingSwitch" onchange="toggleAutomatedTrading(this)">
+                <label class="form-check-label" for="autoTradingSwitch">
+                    <i class="fas fa-robot"></i>
+                    Enable Automated Trading
+                </label>
+            </div>
+        </div>
+        <div id="autoTradingSettings">
+            <div class="form-group mb-3">
+                <label for="minTradeAmount" class="d-flex align-items-center mb-2">
+                    <i class="fas fa-arrow-down text-danger me-2"></i>
+                    Min Trade Amount ($)
+                </label>
+                <input type="number" class="form-control" id="minTradeAmount" min="10" value="10">
+            </div>
+            <div class="form-group">
+                <label for="maxTradeAmount" class="d-flex align-items-center mb-2">
+                    <i class="fas fa-arrow-up text-success me-2"></i>
+                    Max Trade Amount ($)
+                </label>
+                <input type="number" class="form-control" id="maxTradeAmount" min="10" value="100">
+            </div>
+        </div> {% endcomment %}
 
-            <div id="asset-info" class="mt-3">
-                <div class="card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h4 class="card-title mb-0">Asset Information</h4>
-                            <button class="btn btn-sm btn-outline-primary" onclick="updateAssetInfo()">
-                                <i class="fas fa-sync-alt"></i> Refresh
-                            </button>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6">
-                                <p><strong>Current Price:</strong> <span id="asset-price">Loading...</span></p>
-                                <p><strong>Volume:</strong> <span id="asset-volume">Loading...</span></p>
-                                <p><strong>Trading Signal:</strong> <span id="trading-signal">Loading...</span></p>
-                            </div>
-                            <div class="col-md-6">
-                                <h5>Technical Indicators</h5>
-                                <p><strong>RSI:</strong> <span id="rsi-value">Loading...</span></p>
-                                <p><strong>MACD:</strong> <span id="macd-value">Loading...</span></p>
-                                <p><strong>SMA (5):</strong> <span id="sma5-value">Loading...</span></p>
-                                <p><strong>SMA (20):</strong> <span id="sma20-value">Loading...</span></p>
-                            </div>
-                        </div>
-                        <p class="text-muted"><small>Last Updated: <span id="last-update">Loading...</span></small></p>
+        <!-- Automated Trading Status -->
+        <div id="autoTradingStatus" class="mt-4" style="display: none;">
+            <div class="d-flex align-items-center mb-3">
+                <div class="status-indicator me-2"></div>
+                <span class="status-text">System Active</span>
+            </div>
+            <div class="auto-trading-stats p-3 mb-3">
+                <div class="row">
+                    <div class="col-6">
+                        <small class="text-muted">Today's Trades</small>
+                        <h4 id="todayTradesCount">0</h4>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Today's Profit/Loss</small>
+                        <h4 id="todayProfitLoss">$0.00</h4>
                     </div>
                 </div>
             </div>
+            <div class="activity-log">
+                <h6 class="mb-3">
+                    <i class="fas fa-history me-2"></i>
+                    Activity Log
+                </h6>
+                <div id="autoTradingLog" class="small" style="max-height: 200px; overflow-y: auto;">
+                    <!-- Activity logs will be inserted here -->
+                </div>
+            </div>
+        </div>
 
-            <script>
-                let updateTimeout;
+        {% comment %} <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Trading Controls</h5>
+                        <div class="manual-trading mb-4">
+                            <h6>Manual Trading</h6>
+                            <div class="form-group mb-3">
+                                <label for="tradeAmount">Trade Amount ($)</label>
+                                <input type="number" class="form-control" id="tradeAmount" min="10" step="1" placeholder="Enter amount">
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-success flex-grow-1" onclick="executeTrade('buy')">
+                                    <i class="fas fa-arrow-up"></i> Buy
+                                </button>
+                                <button class="btn btn-danger flex-grow-1" onclick="executeTrade('sell')">
+                                    <i class="fas fa-arrow-down"></i> Sell
+                                </button>
+                            </div>
+                        </div>
+    
+                            <div class="automated-trading">
+                                <h6>Automated Trading</h6>
+                                <div class="modern-switch">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="autoTradingSwitch" onchange="toggleAutomatedTrading(this)">
+                                        <label class="form-check-label" for="autoTradingSwitch">
+                                            <i class="fas fa-robot"></i>
+                                            Enable Automated Trading
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="autoTradingSettings" class="mt-3">
+                                    <div class="form-group mb-3">
+                                        <label for="minTradeAmount">
+                                            <i class="fas fa-arrow-down text-danger me-2"></i>
+                                            Min Trade Amount ($)
+                                        </label>
+                                        <input type="number" class="form-control" id="minTradeAmount" min="10" value="10">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="maxTradeAmount">
+                                            <i class="fas fa-arrow-up text-success me-2"></i>
+                                            Max Trade Amount ($)
+                                        </label>
+                                        <input type="number" class="form-control" id="maxTradeAmount" min="10" value="100">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> {% endcomment %}
 
-                function updateAssetInfo() {
-                    const form = document.getElementById('asset-form');
-                    const formData = new FormData(form);
+        <div class="row">
+            <!-- Automated Trading Status -->
+            <div id="autoTradingStatus" class="mt-4" style="display: none;">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="status-indicator me-2"></div>
+                            <span class="status-text">System Active</span>
+                        </div>
+                        <div class="auto-trading-stats p-3 mb-3">
+                            <div class="row">
+                                <div class="col-6">
+                                    <small class="text-muted">Today's Trades</small>
+                                    <h4 id="todayTradesCount">0</h4>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">Today's Profit/Loss</small>
+                                    <h4 id="todayProfitLoss">$0.00</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="activity-log">
+                            <h6 class="mb-3">
+                                <i class="fas fa-history me-2"></i>
+                                Activity Log
+                            </h6>
+                            <div id="autoTradingLog" class="small" style="max-height: 200px; overflow-y: auto;">
+                                <!-- Activity logs will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% comment %} <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Account Actions</h5>
+                        <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#depositModal">
+                            <i class="fas fa-money-bill-wave"></i> Deposit Funds
+                        </button>
+                        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#withdrawModal">
+                            <i class="fas fa-money-bill-transfer"></i> Withdraw Earnings
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div> {% endcomment %}
+
+        {% comment %} <script>
+            let updateTimeout;
+
+            function updateAssetInfo() {
+                const form = document.getElementById('asset-form');
+                const formData = new FormData(form);
+                
+                // Show loading state
+                document.getElementById('asset-price').textContent = 'Loading...';
+                document.getElementById('asset-volume').textContent = 'Loading...';
+                document.getElementById('trading-signal').textContent = 'Loading...';
+                document.getElementById('rsi-value').textContent = 'Loading...';
+                document.getElementById('macd-value').textContent = 'Loading...';
+                document.getElementById('sma5-value').textContent = 'Loading...';
+                document.getElementById('sma20-value').textContent = 'Loading...';
+                document.getElementById('last-update').textContent = 'Loading...';
+
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error(data.error);
+                        return;
+                    }
                     
-                    // Show loading state
-                    document.getElementById('asset-price').textContent = 'Loading...';
-                    document.getElementById('asset-volume').textContent = 'Loading...';
-                    document.getElementById('trading-signal').textContent = 'Loading...';
-                    document.getElementById('rsi-value').textContent = 'Loading...';
-                    document.getElementById('macd-value').textContent = 'Loading...';
-                    document.getElementById('sma5-value').textContent = 'Loading...';
-                    document.getElementById('sma20-value').textContent = 'Loading...';
-                    document.getElementById('last-update').textContent = 'Loading...';
-
-                    fetch(form.action, {
-                        method: 'POST',
-                        body: formData,
-                        headers: {
-                            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
-                        }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            console.error(data.error);
-                            return;
-                        }
-                        
-                        // Update asset information
-                        document.getElementById('asset-price').textContent = `$${data.last_price.toFixed(2)}`;
-                        document.getElementById('asset-volume').textContent = data.volume.toLocaleString();
-                        
-                        // Update trading signal with emoji and color
-                        const signalElement = document.getElementById('trading-signal');
-                        if (data.signal === 1) {
-                            signalElement.textContent = '🔥 Strong Buy';
-                            signalElement.className = 'text-success';
-                        } else if (data.signal === -1) {
-                            signalElement.textContent = '❄️ Strong Sell';
-                            signalElement.className = 'text-danger';
-                        } else {
-                            signalElement.textContent = '⚪ Hold';
-                            signalElement.className = 'text-warning';
-                        }
-                        
-                        // Update technical indicators
-                        document.getElementById('rsi-value').textContent = data.technical_indicators.rsi.toFixed(2);
-                        document.getElementById('macd-value').textContent = data.technical_indicators.macd.toFixed(2);
-                        document.getElementById('sma5-value').textContent = data.technical_indicators.sma5.toFixed(2);
-                        document.getElementById('sma20-value').textContent = data.technical_indicators.sma20.toFixed(2);
-                        
-                        document.getElementById('last-update').textContent = data.timestamp;
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                    });
-                }
-
-                // Update on asset selection change with debounce
-                document.getElementById('asset').addEventListener('change', function() {
-                    clearTimeout(updateTimeout);
-                    updateTimeout = setTimeout(updateAssetInfo, 300); // 300ms debounce
+                    // Update asset information
+                    document.getElementById('asset-price').textContent = `$${data.last_price.toFixed(2)}`;
+                    document.getElementById('asset-volume').textContent = data.volume.toLocaleString();
+                    
+                    // Update trading signal with emoji and color
+                    const signalElement = document.getElementById('trading-signal');
+                    if (data.signal === 1) {
+                        signalElement.textContent = '🔥 Strong Buy';
+                        signalElement.className = 'text-success';
+                    } else if (data.signal === -1) {
+                        signalElement.textContent = '❄️ Strong Sell';
+                        signalElement.className = 'text-danger';
+                    } else {
+                        signalElement.textContent = '⚪ Hold';
+                        signalElement.className = 'text-warning';
+                    }
+                    
+                    // Update technical indicators
+                    document.getElementById('rsi-value').textContent = data.technical_indicators.rsi.toFixed(2);
+                    document.getElementById('macd-value').textContent = data.technical_indicators.macd.toFixed(2);
+                    document.getElementById('sma5-value').textContent = data.technical_indicators.sma5.toFixed(2);
+                    document.getElementById('sma20-value').textContent = data.technical_indicators.sma20.toFixed(2);
+                    
+                    document.getElementById('last-update').textContent = data.timestamp;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
                 });
-                
-                // Initial load with default asset (AAPL)
-                document.addEventListener('DOMContentLoaded', updateAssetInfo);
-                
-                // Auto-refresh every 60 seconds
-                setInterval(updateAssetInfo, 60000);
-            </script>
+            }
+
+            // Update on asset selection change with debounce
+            document.getElementById('asset').addEventListener('change', function() {
+                clearTimeout(updateTimeout);
+                updateTimeout = setTimeout(updateAssetInfo, 300); // 300ms debounce
+            });
+            
+            // Initial load with default asset (AAPL)
+            document.addEventListener('DOMContentLoaded', updateAssetInfo);
+            
+            // Auto-refresh every 60 seconds
+            setInterval(updateAssetInfo, 60000);
+        </script> {% endcomment %}
+    </div>
+
+    <!-- Trading Controls -->
+    <div class="mt-4">
+        <h5>Trading Controls</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group mb-3">
+                    <label for="tradeAmount">Trade Amount ($)</label>
+                    <input type="number" class="form-control" id="tradeAmount" min="10" step="1" placeholder="Enter amount">
+                </div>
+                <div class="btn-group w-100" role="group">
+                    <button class="btn btn-success" onclick="executeTrade('buy')">
+                        <i class="fas fa-arrow-up"></i> Buy
+                    </button>
+                    <button class="btn btn-danger" onclick="executeTrade('sell')">
+                        <i class="fas fa-arrow-down"></i> Sell
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6>Automated Trading</h6>
+                        <style>
+                            /* Modern Switch Styling */
+                            .modern-switch {
+                                position: relative;
+                                display: flex;
+                                align-items: center;
+                                padding: 1rem;
+                                background: linear-gradient(145deg, #1a1a1a, #2a2a2a);
+                                border-radius: 10px;
+                                margin-bottom: 1rem;
+                                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                                transition: all 0.3s ease;
+                            }
+
+                            .modern-switch:hover {
+                                transform: translateY(-2px);
+                                box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+                            }
+
+                            .modern-switch .form-check {
+                                margin: 0;
+                                padding: 0;
+                                width: 100%;
+                            }
+
+                            .modern-switch .form-check-input {
+                                width: 3.5em;
+                                height: 2em;
+                                margin: 0;
+                                background-color: #2c2c2c;
+                                border-color: #404040;
+                                cursor: pointer;
+                            }
+
+                            .modern-switch .form-check-input:checked {
+                                background-color: #2196F3;
+                                border-color: #2196F3;
+                            }
+
+                            .modern-switch .form-check-input:focus {
+                                box-shadow: 0 0 0 0.25rem rgba(33, 150, 243, 0.25);
+                            }
+
+                            .modern-switch .form-check-label {
+                                margin-left: 1rem;
+                                font-weight: 500;
+                                color: #e0e0e0;
+                                cursor: pointer;
+                                display: flex;
+                                align-items: center;
+                            }
+
+                            .modern-switch .form-check-label i {
+                                margin-right: 0.5rem;
+                                font-size: 1.2em;
+                                color: #2196F3;
+                            }
+
+                            /* Settings Panel Animation */
+                            #autoTradingSettings {
+                                opacity: 0;
+                                max-height: 0;
+                                overflow: hidden;
+                                transition: all 0.3s ease-in-out;
+                            }
+
+                            #autoTradingSettings.show {
+                                opacity: 1;
+                                max-height: 200px;
+                                padding: 1rem;
+                                margin-top: 1rem;
+                                background: linear-gradient(145deg, #1a1a1a, #2a2a2a);
+                                border-radius: 10px;
+                                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+                            }
+
+                            /* Input Styling */
+                            .modern-switch .form-control {
+                                background-color: #2c2c2c;
+                                border: 1px solid #404040;
+                                color: #e0e0e0;
+                                transition: all 0.3s ease;
+                            }
+
+                            .modern-switch .form-control:focus {
+                                background-color: #333;
+                                border-color: #2196F3;
+                                box-shadow: 0 0 0 0.25rem rgba(33, 150, 243, 0.25);
+                            }
+                        </style>
+                        <div class="modern-switch">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoTradingSwitch" onchange="toggleAutomatedTrading(this)">
+                                <label class="form-check-label" for="autoTradingSwitch">
+                                    <i class="fas fa-robot"></i>
+                                    Enable Automated Trading
+                                </label>
+                            </div>
+                        </div>
+                        <div id="autoTradingSettings">
+                            <div class="form-group mb-3">
+                                <label for="minTradeAmount" class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-arrow-down text-danger me-2"></i>
+                                    Min Trade Amount ($)
+                                </label>
+                                <input type="number" class="form-control" id="minTradeAmount" min="10" value="10">
+                            </div>
+                            <div class="form-group">
+                                <label for="maxTradeAmount" class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-arrow-up text-success me-2"></i>
+                                    Max Trade Amount ($)
+                                </label>
+                                <input type="number" class="form-control" id="maxTradeAmount" min="10" value="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- End of Trading Controls -->
+
+    <!-- Recent Trades Table -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Recent Trades</h5>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Asset</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Profit/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentTradesBody">
+                        {% for trade in recent_trades %}
+                        <tr>
+                            <td>{{ trade.trade_time|date:"Y-m-d H:i:s" }}</td>
+                            <td>{{ trade.asset }}</td>
+                            <td>
+                                {% if trade.trade_type == 'buy' %}
+                                <span class="badge bg-success">Buy</span>
+                                {% else %}
+                                <span class="badge bg-danger">Sell</span>
+                                {% endif %}
+                            </td>
+                            <td>${{ trade.amount }}</td>
+                            <td>
+                                <span class="badge bg-{{ trade.status|lower }}">{{ trade.status }}</span>
+                            </td>
+                            <td>
+                                {% if trade.profit > 0 %}
+                                <span class="text-success">+${{ trade.profit }}</span>
+                                {% else %}
+                                <span class="text-danger">${{ trade.profit }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -319,9 +716,143 @@
 <!-- News Ticker -->
 <div class="news-ticker-container">
     <div class="news-ticker">
-        <div class="news-content">Loading news...</div>
+        <div class="news-content">
+            {% for news in trading_news %}
+                <span class="news-item">{{ news.title }} | </span>
+            {% endfor %}
+        </div>
     </div>
 </div>
+
+<style>
+    /* News Ticker Styling */
+    .news-ticker-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        padding: 10px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 1000;
+    }
+
+    .news-ticker {
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+    }
+
+    .news-content {
+        display: inline-block;
+        animation: ticker 60s linear infinite;
+        padding-left: 100%;
+    }
+
+    .news-item {
+        color: #e0e0e0;
+        margin-right: 30px;
+    }
+
+    @keyframes ticker {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-100%); }
+    }
+
+    /* Reset animation when hovering */
+    .news-ticker:hover .news-content {
+        animation-play-state: paused;
+    }
+
+    /* Modal Styling */
+    .modal-content {
+        background-color: var(--bg-primary);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .modal-header, .modal-footer {
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .payment-methods {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 20px;
+    }
+</style>
+
+<style>
+    .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #28a745;
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+        }
+        
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+        }
+        
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+        }
+    }
+
+    .auto-trading-stats {
+        background: linear-gradient(145deg, #1a1a1a, #2a2a2a);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .activity-log {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        padding: 1rem;
+    }
+
+    #autoTradingLog {
+        font-family: monospace;
+    }
+
+    .log-entry {
+        padding: 0.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .log-entry:last-child {
+        border-bottom: none;
+    }
+
+    .log-time {
+        color: #6c757d;
+    }
+
+    .log-message {
+        color: #e0e0e0;
+    }
+
+    .log-entry.trade {
+        border-left: 3px solid #2196F3;
+    }
+
+    .log-entry.analysis {
+        border-left: 3px solid #ff9800;
+    }
+
+    .log-entry.error {
+        border-left: 3px solid #dc3545;
+    }
+</style>
 
 <!-- Deposit Modal -->
 <div class="modal fade" id="depositModal" tabindex="-1">
@@ -344,15 +875,78 @@
 </div>
 
 <!-- PayPal Script -->
-<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=USD"></script>
+<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=USD&intent=capture"></script>
 <script>
     let depositModal = document.getElementById('depositModal');
+    let processingPayment = false;
     
-    depositModal.addEventListener('shown.bs.modal', function () {
+    function updateBalance() {
+        console.log('Updating balance...');
+        fetch('/trading/api/get-balance/')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Balance update response:', data);
+                if (data.status === 'success') {
+                    document.getElementById('accountBalance').textContent = `$${data.balance.toFixed(2)}`;
+                }
+            })
+            .catch(error => console.error('Error updating balance:', error));
+    }
+
+    function showNotification(type, message) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+        alertDiv.setAttribute('role', 'alert');
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        document.body.appendChild(alertDiv);
+        
+        // Auto dismiss after 5 seconds
+        setTimeout(() => {
+            alertDiv.remove();
+        }, 5000);
+    }
+
+    function handlePaymentError(error) {
+        console.error('Payment Error:', error);
+        processingPayment = false;
+        showNotification('danger', error.message || 'Failed to process payment');
+        // Reset the PayPal button container
+        document.getElementById('paypal-button-container').innerHTML = '';
         initializePayPal();
-    });
+        // Close the modal
+        const depositModal = bootstrap.Modal.getInstance(document.getElementById('depositModal'));
+        if (depositModal) {
+            depositModal.hide();
+        }
+        // Reset the amount input
+        document.getElementById('depositAmount').value = '';
+    }
+
+    function showProcessingPayment() {
+        processingPayment = true;
+        document.getElementById('paypal-button-container').innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="mt-2">Processing payment...</div>
+                <button class="btn btn-link mt-2" onclick="cancelProcessing()">Cancel</button>
+            </div>`;
+    }
+
+    function cancelProcessing() {
+        if (processingPayment) {
+            processingPayment = false;
+            initializePayPal();
+            showNotification('info', 'Payment processing cancelled');
+        }
+    }
 
     function initializePayPal() {
+        console.log('Initializing PayPal...');
         const amount = document.getElementById('depositAmount').value;
         if (!amount || amount < 10) {
             showNotification('error', 'Please enter an amount of at least $10');
@@ -371,66 +965,353 @@
             },
 
             createOrder: function(data, actions) {
-                const amount = document.getElementById('depositAmount').value;
+                console.log('Creating PayPal order...');
                 return actions.order.create({
                     purchase_units: [{
                         amount: {
-                            value: amount
+                            value: amount,
+                            currency_code: 'USD'
+                        },
+                        description: 'Deposit to AI Trading Platform',
+                        payee: {
+                            email_address: '{{ paypal_receiver_email }}'  // This will be replaced with your PayPal business email
                         }
-                    }]
+                    }],
+                    application_context: {
+                        shipping_preference: 'NO_SHIPPING'
+                    }
                 });
             },
 
             onApprove: function(data, actions) {
-                return actions.order.capture().then(function(details) {
-                    // Send the payment details to your server
-                    const amount = document.getElementById('depositAmount').value;
-                    fetch('/api/process-deposit/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-                        },
-                        body: JSON.stringify({
-                            payment_id: details.id,
-                            amount: amount,
-                            status: 'completed'
+                console.log('Payment approved by PayPal, capturing order...');
+                
+                // First capture the payment
+                return actions.order.capture()
+                    .then(function(details) {
+                        console.log('Payment captured:', details);
+                        showProcessingPayment();
+                        
+                        // Then process it on our server
+                        return fetch('/trading/api/process-deposit/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                            },
+                            body: JSON.stringify({
+                                order_id: data.orderID,
+                                payment_id: details.id,
+                                amount: amount,
+                                status: details.status,
+                                details: details  // Send full PayPal response for logging
+                            })
                         })
+                        .then(response => response.json())
+                        .then(data => {
+                            console.log('Server response data:', data);
+                            processingPayment = false;
+                            
+                            if (data.status === 'success') {
+                                // Update balance and show success message
+                                updateBalance();
+                                showNotification('success', 'Payment processed successfully!');
+                                // Close the deposit modal
+                                const depositModal = bootstrap.Modal.getInstance(document.getElementById('depositModal'));
+                                if (depositModal) {
+                                    depositModal.hide();
+                                }
+                                // Reset the PayPal button container
+                                document.getElementById('paypal-button-container').innerHTML = '';
+                                // Reset the amount input
+                                document.getElementById('depositAmount').value = '';
+                            } else {
+                                throw new Error(data.message || 'Failed to process payment');
+                            }
+                        })
+                        .catch(error => {
+                            handlePaymentError(error);
+                        });
                     })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.status === 'success') {
-                            showNotification('success', `Successfully deposited $${amount}`);
-                            $('#depositModal').modal('hide');
-                            updateBalance();  // Update the displayed balance
-                        } else {
-                            showNotification('error', data.message || 'Failed to process deposit');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        showNotification('error', 'Failed to process deposit');
+                    .catch(function(error) {
+                        handlePaymentError(error);
                     });
-                });
             },
 
             onError: function(err) {
                 console.error('PayPal Error:', err);
-                showNotification('error', 'PayPal payment failed');
+                handlePaymentError(err);
+            },
+
+            onCancel: function() {
+                console.log('Payment cancelled');
+                showNotification('info', 'Payment cancelled');
+                processingPayment = false;
             }
         }).render('#paypal-button-container');
     }
 
-    // Update deposit amount listener
-    document.getElementById('depositAmount').addEventListener('change', function() {
-        initializePayPal();
+    // Initialize PayPal when amount is entered
+    document.getElementById('depositAmount').addEventListener('input', function() {
+        if (this.value >= 10) {
+            initializePayPal();
+        } else {
+            document.getElementById('paypal-button-container').innerHTML = '<div class="alert alert-info">Enter an amount of at least $10 to continue</div>';
+        }
     });
 
-    // Reset PayPal container when modal is closed
+    // Reset modal when closed
     depositModal.addEventListener('hidden.bs.modal', function () {
-        document.getElementById('paypal-button-container').innerHTML = '';
-        document.getElementById('depositAmount').value = '';
+        if (!processingPayment) {
+            document.getElementById('paypal-button-container').innerHTML = '';
+            document.getElementById('depositAmount').value = '';
+        }
     });
+
+    // Trading Functions
+    async function executeTrade(tradeType) {
+        const amount = document.getElementById('tradeAmount').value;
+        const asset = document.getElementById('asset').value;
+        
+        if (!amount || amount < 10) {
+            showNotification('error', 'Please enter a valid amount (minimum $10)');
+            return;
+        }
+
+        try {
+            const response = await fetch('/trading/api/execute-trade/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({
+                    asset: asset,
+                    trade_type: tradeType,
+                    amount: amount
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                showNotification('success', `Successfully placed ${tradeType} order for ${asset}`);
+                updateBalance();
+                updateAssetInfo();
+            } else {
+                showNotification('error', data.message || 'Failed to execute trade');
+            }
+        } catch (error) {
+            console.error('Trade execution error:', error);
+            showNotification('error', 'An error occurred while executing the trade');
+        }
+    }
+
+    async function toggleAutomatedTrading(checkbox) {
+        const settingsDiv = document.getElementById('autoTradingSettings');
+        const statusDiv = document.getElementById('autoTradingStatus');
+        
+        if (checkbox.checked) {
+            settingsDiv.classList.add('show');
+            statusDiv.style.display = 'block';
+            initializeAutoTradingWebSocket();
+        } else {
+            settingsDiv.classList.remove('show');
+            statusDiv.style.display = 'none';
+            if (autoTradingSocket) {
+                autoTradingSocket.close();
+            }
+        }
+
+        try {
+            const endpoint = checkbox.checked ? '/trading/api/start-automated-trading/' : '/trading/api/stop-automated-trading/';
+            const minAmount = parseFloat(document.getElementById('minTradeAmount').value) || 10;
+            const maxAmount = parseFloat(document.getElementById('maxTradeAmount').value) || 100;
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({
+                    min_trade_amount: minAmount,
+                    max_trade_amount: maxAmount
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                showNotification('success', `Automated trading ${checkbox.checked ? 'enabled' : 'disabled'}`);
+            } else {
+                showNotification('error', data.message || 'Failed to update automated trading settings');
+                checkbox.checked = !checkbox.checked;
+                statusDiv.style.display = 'none';
+                settingsDiv.classList.remove('show');
+                if (autoTradingSocket) {
+                    autoTradingSocket.close();
+                }
+            }
+        } catch (error) {
+            console.error('Automated trading toggle error:', error);
+            showNotification('error', 'An error occurred while updating automated trading settings');
+            checkbox.checked = !checkbox.checked;
+            statusDiv.style.display = 'none';
+            settingsDiv.classList.remove('show');
+            if (autoTradingSocket) {
+                autoTradingSocket.close();
+            }
+        }
+    }
+
+    // Update automated trading status on page load
+    async function updateAutomatedTradingStatus() {
+        try {
+            const response = await fetch('/trading/api/trading-status/');
+            const data = await response.json();
+            
+            const checkbox = document.getElementById('autoTradingSwitch');
+            const settingsDiv = document.getElementById('autoTradingSettings');
+            
+            if (data.auto_trading_enabled) {
+                checkbox.checked = true;
+                settingsDiv.classList.add('show');
+                document.getElementById('minTradeAmount').value = data.min_trade_amount;
+                document.getElementById('maxTradeAmount').value = data.max_trade_amount;
+            } else {
+                checkbox.checked = false;
+                settingsDiv.classList.remove('show');
+            }
+        } catch (error) {
+            console.error('Error fetching automated trading status:', error);
+            showNotification('error', 'Failed to fetch automated trading status');
+        }
+    }
+
+    // Call on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        updateAutomatedTradingStatus();
+    });
+
+    // WebSocket connection for real-time updates
+    const tradeSocket = new WebSocket(
+        'ws://' + window.location.host + '/ws/trades/'
+    );
+
+    tradeSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        
+        if (data.type === 'trade_update') {
+            // Update recent trades table
+            const tradesBody = document.getElementById('recentTradesBody');
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td>${new Date(data.trade.trade_time).toLocaleString()}</td>
+                <td>${data.trade.asset}</td>
+                <td>
+                    <span class="badge bg-${data.trade.trade_type === 'buy' ? 'success' : 'danger'}">
+                        ${data.trade.trade_type}
+                    </span>
+                </td>
+                <td>$${data.trade.amount}</td>
+                <td>
+                    <span class="badge bg-${data.trade.status.toLowerCase()}">
+                        ${data.trade.status}
+                    </span>
+                </td>
+                <td>
+                    <span class="text-${data.trade.profit > 0 ? 'success' : 'danger'}">
+                        ${data.trade.profit > 0 ? '+' : ''}$${data.trade.profit}
+                    </span>
+                </td>
+            `;
+            tradesBody.insertBefore(newRow, tradesBody.firstChild);
+            
+            // Remove oldest row if more than 10 rows
+            if (tradesBody.children.length > 10) {
+                tradesBody.removeChild(tradesBody.lastChild);
+            }
+            
+            // Update balance if trade affects it
+            updateBalance();
+        }
+    };
+
+    tradeSocket.onopen = function(e) {
+        console.log('WebSocket connection established');
+    };
+
+    tradeSocket.onclose = function(e) {
+        console.log('WebSocket connection closed');
+    };
+
+    tradeSocket.onerror = function(e) {
+        console.error('WebSocket error:', e);
+    };
+
+    // Function to send trade updates through WebSocket
+    function sendTradeUpdate(tradeData) {
+        if (tradeSocket.readyState === WebSocket.OPEN) {
+            tradeSocket.send(JSON.stringify({
+                'type': 'trade_update',
+                'data': tradeData
+            }));
+        }
+    }
+
+    // Automated Trading WebSocket handling
+    let autoTradingSocket;
+
+    function initializeAutoTradingWebSocket() {
+        autoTradingSocket = new WebSocket(
+            'ws://' + window.location.host + '/trading/ws/auto-trading/'
+        );
+
+        autoTradingSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            handleAutoTradingUpdate(data);
+        };
+
+        autoTradingSocket.onclose = function(e) {
+            console.log('Auto-trading WebSocket connection closed');
+            // Try to reconnect after 5 seconds
+            setTimeout(initializeAutoTradingWebSocket, 5000);
+        };
+    }
+
+    function handleAutoTradingUpdate(data) {
+        const logContainer = document.getElementById('autoTradingLog');
+        const timestamp = new Date().toLocaleTimeString();
+
+        // Update stats if provided
+        if (data.stats) {
+            document.getElementById('todayTradesCount').textContent = data.stats.trades_count;
+            document.getElementById('todayProfitLoss').textContent = formatCurrency(data.stats.profit_loss);
+        }
+
+        // Add log entry
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${data.type || 'info'}`;
+        logEntry.innerHTML = `
+            <span class="log-time">[${timestamp}]</span>
+            <span class="log-message">${data.message}</span>
+        `;
+
+        logContainer.insertBefore(logEntry, logContainer.firstChild);
+
+        // Keep only the last 50 entries
+        while (logContainer.children.length > 50) {
+            logContainer.removeChild(logContainer.lastChild);
+        }
+    }
+
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD'
+        }).format(amount);
+    }
 </script>
 
 <!-- Withdraw Modal -->
@@ -472,59 +1353,149 @@
     </div>
 </div>
 
-<style>
-    .news-ticker-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        background: rgba(0, 0, 0, 0.9);
-        padding: 10px 0;
-        border-top: 1px solid rgba(255, 255, 255, 0.1);
-        z-index: 1000;
+<script>
+    // Handle withdrawal method change
+    document.getElementById('withdrawMethod').addEventListener('change', function() {
+        const bankDetails = document.getElementById('bankDetails');
+        const paypalDetails = document.getElementById('paypalDetails');
+        
+        if (this.value === 'bank') {
+            bankDetails.style.display = 'block';
+            paypalDetails.style.display = 'none';
+        } else {
+            bankDetails.style.display = 'none';
+            paypalDetails.style.display = 'block';
+        }
+    });
+
+    // Process withdrawal
+    function processWithdrawal() {
+        const amount = document.getElementById('withdrawAmount').value;
+        const method = document.getElementById('withdrawMethod').value;
+        const bankAccount = document.getElementById('bankAccount').value;
+        const paypalEmail = document.getElementById('paypalEmail').value;
+
+        if (!amount || amount < 10) {
+            showNotification('error', 'Minimum withdrawal amount is $10');
+            return;
+        }
+
+        const withdrawalData = {
+            amount: amount,
+            method: method,
+            bank_account: method === 'bank' ? bankAccount : null,
+            paypal_email: method === 'paypal' ? paypalEmail : null
+        };
+
+        fetch('/trading/api/process-withdrawal/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify(withdrawalData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showNotification('success', 'Withdrawal request processed successfully');
+                $('#withdrawModal').modal('hide');
+                updateTradingStatus(); // Refresh balance display
+            } else {
+                showNotification('error', data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('error', 'Failed to process withdrawal');
+        });
+    }
+</script>
+
+<script>
+    // News Ticker
+    async function fetchNews() {
+        try {
+            const response = await fetch('/trading/api/trading-news/');
+            const data = await response.json();
+            if (data.status === 'success' && data.data && data.data.length > 0) {
+                const newsContent = data.data.map(article => 
+                    `<span class="me-4">📰 ${article.title}</span>`
+                ).join('');
+                document.querySelector('.news-content').innerHTML = newsContent;
+            } else {
+                document.querySelector('.news-content').innerHTML = 'No news available at the moment';
+            }
+        } catch (error) {
+            console.error('Error fetching news:', error);
+            document.querySelector('.news-content').innerHTML = 'Error loading news';
+        }
     }
 
-    .news-ticker {
-        overflow: hidden;
-        white-space: nowrap;
-        position: relative;
+    // Fetch news immediately and then every hour
+    fetchNews();
+    setInterval(fetchNews, 3600000); // 1 hour = 3600000 milliseconds
+
+    // Handle Withdrawal
+    async function handleWithdrawal() {
+        const amount = document.getElementById('withdrawalAmount').value;
+        if (!amount || amount < 10) {
+            showWithdrawalMessage('Please enter a valid amount (minimum $10)', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/trading/api/process-withdrawal/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ amount: amount })
+            });
+
+            const data = await response.json();
+            if (data.status === 'success') {
+                showWithdrawalMessage('Withdrawal processed successfully! Refreshing page...', 'success');
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                showWithdrawalMessage(data.message, 'error');
+            }
+        } catch (error) {
+            showWithdrawalMessage('An error occurred. Please try again.', 'error');
+        }
     }
 
-    .news-content {
-        display: inline-block;
-        animation: ticker 60s linear infinite;
-        padding-left: 100%;
+    function showPaymentMessage(message, type) {
+        const messageElement = document.getElementById('payment-message');
+        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
+        messageElement.textContent = message;
+        messageElement.style.display = 'block';
     }
 
-    @keyframes ticker {
-        0% { transform: translateX(0); }
-        100% { transform: translateX(-100%); }
+    function showWithdrawalMessage(message, type) {
+        const messageElement = document.getElementById('withdrawal-message');
+        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
+        messageElement.textContent = message;
+        messageElement.style.display = 'block';
     }
 
-    .modal-content {
-        background-color: var(--bg-primary);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
     }
+</script>
 
-    .modal-header, .modal-footer {
-        border-color: rgba(255, 255, 255, 0.1);
-    }
-
-    .payment-methods {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        margin-top: 20px;
-    }
-
-    /* Reset animation when hovering */
-    .news-ticker:hover .news-content {
-        animation-play-state: paused;
-    }
-</style>
-
-<script src="https://js.stripe.com/v3/"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     // Stocks Chart
     const stocksCtx = document.getElementById('stocksChart').getContext('2d');
@@ -626,10 +1597,9 @@
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: {
-                    position: 'top',
-                },
+            interaction: {
+                intersect: false,
+                mode: 'index'
             },
             scales: {
                 x: {
@@ -650,177 +1620,268 @@
 </script>
 
 <script>
-    // Trade updates
-    const tradeUpdates = document.getElementById('trade-updates');
-    const socket = new WebSocket('ws://' + window.location.host + '/ws/trades/');
+    // WebSocket connection
+    const socket = new WebSocket(
+        'ws://' + window.location.host + '/trading/ws/trades/'
+    );
 
-    socket.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        const li = document.createElement('li');
-        li.classList.add('list-group-item', 'bg-dark', 'text-white');
-        li.textContent = data.message;
-        tradeUpdates.prepend(li);
+    socket.onopen = function(e) {
+        console.log('WebSocket connection established');
     };
+
+    socket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        console.log('WebSocket message received:', data);
+        
+        // Update relevant UI elements based on the message type
+        if (data.type === 'trade_update') {
+            updateBalance();
+            // You might want to update other UI elements like trade history
+        }
+    };
+
+    socket.onclose = function(e) {
+        console.log('WebSocket connection closed');
+    };
+
+    socket.onerror = function(e) {
+        console.error('WebSocket error:', e);
+    };
+
+    // Function to send trade updates through WebSocket
+    function sendTradeUpdate(tradeData) {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({
+                'type': 'trade_update',
+                'data': tradeData
+            }));
+        }
+    }
 
     // Trade execution
     document.getElementById('trade-now').addEventListener('click', async () => {
-        const response = await fetch('/api/execute-trade/', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Content-Type': 'application/json'
-            },
-        });
-        if (response.ok) {
-            alert('Trade executed successfully!');
-        } else {
-            alert('Failed to execute trade.');
-        }
-    });
-
-</script>
-
-<script>
-    // News Ticker
-    async function fetchNews() {
-        try {
-            const response = await fetch('/api/trading-news/');
-            const data = await response.json();
-            if (data.status === 'success' && data.data && data.data.length > 0) {
-                const newsContent = data.data.map(article => 
-                    `<span class="me-4">📰 ${article.title}</span>`
-                ).join('');
-                document.querySelector('.news-content').innerHTML = newsContent;
-            } else {
-                document.querySelector('.news-content').innerHTML = 'No news available at the moment';
-            }
-        } catch (error) {
-            console.error('Error fetching news:', error);
-            document.querySelector('.news-content').innerHTML = 'Error loading news';
-        }
-    }
-
-    // Fetch news immediately and then every hour
-    fetchNews();
-    setInterval(fetchNews, 3600000); // 1 hour = 3600000 milliseconds
-
-    // Handle withdrawal method change
-    document.getElementById('withdrawMethod').addEventListener('change', function() {
-        const bankDetails = document.getElementById('bankDetails');
-        const paypalDetails = document.getElementById('paypalDetails');
-        
-        if (this.value === 'bank') {
-            bankDetails.style.display = 'block';
-            paypalDetails.style.display = 'none';
-        } else {
-            bankDetails.style.display = 'none';
-            paypalDetails.style.display = 'block';
-        }
-    });
-
-    // Process withdrawal
-    function processWithdrawal() {
-        const amount = document.getElementById('withdrawAmount').value;
-        const method = document.getElementById('withdrawMethod').value;
-        const bankAccount = document.getElementById('bankAccount').value;
-        const paypalEmail = document.getElementById('paypalEmail').value;
-
-        if (!amount || amount < 10) {
-            showNotification('error', 'Minimum withdrawal amount is $10');
-            return;
-        }
-
-        const withdrawalData = {
-            amount: amount,
-            method: method,
-            bank_account: method === 'bank' ? bankAccount : null,
-            paypal_email: method === 'paypal' ? paypalEmail : null
-        };
-
-        fetch('/api/process-withdrawal/', {
+        const response = await fetch('/trading/api/execute-trade/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                'X-CSRFToken': getCookie('csrftoken')
             },
-            body: JSON.stringify(withdrawalData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                showNotification('success', 'Withdrawal request processed successfully');
-                $('#withdrawModal').modal('hide');
-                updateTradingStatus(); // Refresh balance display
-            } else {
-                showNotification('error', data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showNotification('error', 'Failed to process withdrawal');
+            body: JSON.stringify({
+                asset: document.getElementById('asset').value,
+                amount: document.getElementById('trade-amount').value,
+                action: document.getElementById('trade-action').value
+            })
         });
-    }
+
+        const result = await response.json();
+        if (response.ok) {
+            // Send trade update through WebSocket
+            sendTradeUpdate(result);
+            showMessage('Trade executed successfully!', 'success');
+            updateBalance();
+        } else {
+            showMessage(result.error || 'Failed to execute trade', 'error');
+        }
+    });
 </script>
 
 <script>
-    // Handle Withdrawal
-    async function handleWithdrawal() {
-        const amount = document.getElementById('withdrawalAmount').value;
-        if (!amount || amount < 10) {
-            showWithdrawalMessage('Please enter a valid amount (minimum $10)', 'error');
-            return;
-        }
-
-        try {
-            const response = await fetch('/api/process-withdrawal/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCookie('csrftoken')
+    // Initialize all charts
+    function initializeCharts() {
+        // Price Chart
+        const priceCtx = document.getElementById('priceChart').getContext('2d');
+        window.priceChart = new Chart(priceCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Price',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
                 },
-                body: JSON.stringify({ amount: amount })
-            });
-
-            const data = await response.json();
-            if (data.status === 'success') {
-                showWithdrawalMessage('Withdrawal processed successfully! Refreshing page...', 'success');
-                setTimeout(() => location.reload(), 2000);
-            } else {
-                showWithdrawalMessage(data.message, 'error');
-            }
-        } catch (error) {
-            showWithdrawalMessage('An error occurred. Please try again.', 'error');
-        }
-    }
-
-    function showPaymentMessage(message, type) {
-        const messageElement = document.getElementById('payment-message');
-        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
-        messageElement.textContent = message;
-        messageElement.style.display = 'block';
-    }
-
-    function showWithdrawalMessage(message, type) {
-        const messageElement = document.getElementById('withdrawal-message');
-        messageElement.className = `alert alert-${type === 'error' ? 'danger' : 'success'} mt-3`;
-        messageElement.textContent = message;
-        messageElement.style.display = 'block';
-    }
-
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
                 }
             }
-        }
-        return cookieValue;
+        });
+
+        // Volume Chart
+        const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+        window.volumeChart = new Chart(volumeCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Volume',
+                    data: [],
+                    backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                    borderColor: 'rgb(54, 162, 235)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Technical Indicators Chart
+        const technicalCtx = document.getElementById('technicalChart').getContext('2d');
+        window.technicalChart = new Chart(technicalCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'RSI',
+                        data: [],
+                        borderColor: 'rgb(255, 99, 132)',
+                        tension: 0.1,
+                        yAxisID: 'rsi'
+                    },
+                    {
+                        label: 'MACD',
+                        data: [],
+                        borderColor: 'rgb(54, 162, 235)',
+                        tension: 0.1,
+                        yAxisID: 'macd'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    rsi: {
+                        type: 'linear',
+                        position: 'left',
+                        min: 0,
+                        max: 100
+                    },
+                    macd: {
+                        type: 'linear',
+                        position: 'right',
+                        grid: {
+                            drawOnChartArea: false
+                        }
+                    }
+                }
+            }
+        });
+
+        // Profit/Loss Chart
+        const plCtx = document.getElementById('profitLossChart').getContext('2d');
+        window.profitLossChart = new Chart(plCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Profit/Loss',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: function(context) {
+                        const value = context.raw;
+                        return value >= 0 ? 'rgba(75, 192, 192, 0.2)' : 'rgba(255, 99, 132, 0.2)';
+                    },
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
     }
+
+    // Update charts with new data
+    function updateCharts(data) {
+        const timestamp = new Date().toLocaleTimeString();
+
+        // Update Price Chart
+        if (data.price) {
+            priceChart.data.labels.push(timestamp);
+            priceChart.data.datasets[0].data.push(data.price);
+            if (priceChart.data.labels.length > 50) {
+                priceChart.data.labels.shift();
+                priceChart.data.datasets[0].data.shift();
+            }
+            priceChart.update();
+        }
+
+        // Update Volume Chart
+        if (data.volume) {
+            volumeChart.data.labels.push(timestamp);
+            volumeChart.data.datasets[0].data.push(data.volume);
+            if (volumeChart.data.labels.length > 20) {
+                volumeChart.data.labels.shift();
+                volumeChart.data.datasets[0].data.shift();
+            }
+            volumeChart.update();
+        }
+
+        // Update Technical Indicators Chart
+        if (data.technical) {
+            technicalChart.data.labels.push(timestamp);
+            technicalChart.data.datasets[0].data.push(data.technical.rsi);
+            technicalChart.data.datasets[1].data.push(data.technical.macd);
+            if (technicalChart.data.labels.length > 50) {
+                technicalChart.data.labels.shift();
+                technicalChart.data.datasets[0].data.shift();
+                technicalChart.data.datasets[1].data.shift();
+            }
+            technicalChart.update();
+        }
+
+        // Update Profit/Loss Chart
+        if (data.profitLoss !== undefined) {
+            profitLossChart.data.labels.push(timestamp);
+            profitLossChart.data.datasets[0].data.push(data.profitLoss);
+            if (profitLossChart.data.labels.length > 50) {
+                profitLossChart.data.labels.shift();
+                profitLossChart.data.datasets[0].data.shift();
+            }
+            profitLossChart.update();
+        }
+    }
+
+    // Initialize charts when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCharts();
+        updateAutomatedTradingStatus();
+    });
+
+    // Update WebSocket message handler to update charts
+    autoTradingSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        handleAutoTradingUpdate(data);
+        updateCharts(data);
+    };
 </script>
+
+</div>
+
+<script src="{% static 'js/dashboard.js' %}"></script>
 
 {% endblock %}

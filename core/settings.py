@@ -70,16 +70,13 @@ TEMPLATES = [
 WSGI_APPLICATION = 'core.wsgi.application'
 
 # Channels configuration
-ASGI_APPLICATION = 'ai_trading_platform.asgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
 
-# Redis settings for Channels (same as for Celery)
+# In-memory channel layer configuration for development
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
-        },
-    },
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
 }
 
 

@@ -51,6 +51,10 @@ class UserProfile(models.Model):
         default='USD'
     )
     verified = models.BooleanField(default=False)
+    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    automated_trading_enabled = models.BooleanField(default=False)
+    min_trade_amount = models.DecimalField(max_digits=10, decimal_places=2, default=10)
+    max_trade_amount = models.DecimalField(max_digits=10, decimal_places=2, default=100)
 
     def __str__(self):
         return self.user.username
@@ -157,12 +161,14 @@ class Transaction(models.Model):
     details = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"{self.transaction_type} - {self.amount} USD - {self.status}"
+    order_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    payment_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.transaction_type} - {self.amount} USD - {self.status}"
 
 
 @receiver(post_save, sender=User)
