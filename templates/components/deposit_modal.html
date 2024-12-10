@@ -1,0 +1,36 @@
+<!-- Deposit Modal -->
+<div class="modal fade" id="depositModal" tabindex="-1" aria-labelledby="depositModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="depositModalLabel">Deposit Funds</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="depositForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="depositAmount" class="form-label">Amount ($)</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary" id="depositAmount" name="amount" min="10" step="0.01" required>
+                        <div class="form-text text-light">Minimum deposit: $10</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="depositMethod" class="form-label">Payment Method</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="depositMethod" name="method" required>
+                            <option value="">Select payment method</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="crypto">Cryptocurrency</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info bg-dark text-info border-info mb-3">
+                        <i class="fas fa-info-circle"></i> After submitting, you will be redirected to complete the payment.
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success">Submit Deposit</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

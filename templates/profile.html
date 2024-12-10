@@ -24,7 +24,7 @@
             <p class="mb-0">{{ user_profile.bio|default:"No bio provided" }}</p>
         </div>
         <div class="col-auto">
-            <a href="{% url 'edit_profile' %}" class="btn btn-primary">
+            <a href="{% url 'trading:edit_profile' %}" class="btn btn-primary">
                 <i class="fas fa-edit me-2"></i>Edit Profile
             </a>
         </div>

@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - AI Trading Platform{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <nav class="col-md-2 d-none d-md-block bg-dark sidebar">
+            <div class="sidebar-sticky">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="{% url 'trading:user_dashboard' %}">
+                            <i class="fas fa-home"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'trading:profile' %}">
+                            <i class="fas fa-user"></i> Profile
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main role="main" class="col-md-10 ml-sm-auto px-4">
+            <!-- Account Overview -->
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">Dashboard</h1>
+                <div class="btn-toolbar mb-2 mb-md-0">
+                    <button type="button" class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#depositModal">
+                        <i class="fas fa-plus"></i> Deposit
+                    </button>
+                    <button type="button" class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#withdrawModal">
+                        <i class="fas fa-minus"></i> Withdraw
+                    </button>
+                </div>
+            </div>
+
+            <!-- Account Balance -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Account Balance</h5>
+                            <h2 class="mb-0">${{ account_balance|floatformat:2 }}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Total Profit/Loss</h5>
+                            <h2 class="mb-0 {% if total_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ total_profit|floatformat:2 }}
+                            </h2>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-dark text-light">
+                        <div class="card-body">
+                            <h5 class="card-title">Win Rate</h5>
+                            <h2 class="mb-0">{{ win_rate }}%</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trading Controls -->
+            {% include 'components/automated_trading_controls.html' %}
+
+            <!-- Recent Trades -->
+            <div class="card bg-dark text-light mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Recent Trades</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Entry Price</th>
+                                    <th>Exit Price</th>
+                                    <th>Profit/Loss</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for trade in trades %}
+                                <tr>
+                                    <td>{{ trade.asset }}</td>
+                                    <td>{{ trade.trade_type|title }}</td>
+                                    <td>${{ trade.amount|floatformat:2 }}</td>
+                                    <td>${{ trade.entry_price|floatformat:2 }}</td>
+                                    <td>{% if trade.exit_price %}${{ trade.exit_price|floatformat:2 }}{% else %}-{% endif %}</td>
+                                    <td class="{% if trade.profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        ${{ trade.profit|floatformat:2 }}
+                                    </td>
+                                    <td>{{ trade.status|title }}</td>
+                                    <td>{{ trade.timestamp|date:"M d, Y H:i" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="8" class="text-center">No trades yet</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Transactions -->
+            <div class="card bg-dark text-light mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">Recent Transactions</h5>
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for transaction in transactions %}
+                                <tr>
+                                    <td>{{ transaction.transaction_type|title }}</td>
+                                    <td>${{ transaction.amount|floatformat:2 }}</td>
+                                    <td>{{ transaction.status|title }}</td>
+                                    <td>{{ transaction.timestamp|date:"M d, Y H:i" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center">No transactions yet</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Deposit Modal -->
+{% include 'components/deposit_modal.html' %}
+
+<!-- Withdrawal Modal -->
+{% include 'components/withdrawal_modal.html' %}
+
+<!-- Notification -->
+<div id="notification" class="alert" style="display: none; position: fixed; top: 20px; right: 20px; z-index: 1000;"></div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

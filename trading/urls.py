@@ -1,32 +1,32 @@
 from django.urls import path, include
 from . import views
-from paypal.standard.ipn import views as paypal_views
-from .views import StartAutomatedTradingView, StopAutomatedTradingView, TradingStatusView
+
+app_name = 'trading'
 
 urlpatterns = [
+    # Main pages
     path('', views.home, name='home'),
-    path('dashboard/', views.user_dashboard, name='user_dashboard'),
+    path('register/', views.register, name='register'),
+    path('dashboard/', views.user_dashboard, name='user_dashboard'),  # Changed name to match template
     path('profile/', views.profile, name='profile'),
     path('profile/edit/', views.edit_profile, name='edit_profile'),
-    path('deposit/paypal/', views.paypal_deposit, name='paypal_deposit'),
-    path('deposit/stripe/', views.stripe_checkout, name='stripe_checkout'),
-    path('payment/success/', views.payment_success, name='payment_success'),
-    path('payment/cancelled/', views.payment_cancelled, name='payment_cancelled'),
-    path('payment/success/stripe/', views.payment_success_stripe, name='payment_success_stripe'),
-    path('handle-asset/', views.handle_selected_asset, name='handle_selected_asset'),
     
-    # New automated trading endpoints
-    path('api/start-automated-trading/', StartAutomatedTradingView.as_view(), name='start_automated_trading'),
-    path('api/stop-automated-trading/', StopAutomatedTradingView.as_view(), name='stop_automated_trading'),
-    path('api/trading-status/', TradingStatusView.as_view(), name='trading_status'),
-    path('api/manual-trade/', views.manual_trade, name='manual_trade'),
-    path('api/market-data/', views.get_market_data, name='market_data'),
-    path('api/trading-news/', views.get_trading_news, name='trading_news'),
-    path('api/process-deposit/', views.process_deposit, name='process_deposit'),
-    path('api/get-balance/', views.get_balance, name='get_balance'),
-    path('api/process-withdrawal/', views.process_withdrawal, name='process_withdrawal'),
-    path('admin-dashboard/', views.admin_dashboard, name='admin_dashboard'),
-    path('admin-transactions/', views.admin_transactions, name='admin_transactions'),
-    path('execute_trade/', views.execute_trade, name='execute_trade'),
-    path('paypal/', include('paypal.standard.ipn.urls')),  # PayPal IPN URLs
+    # Automated trading endpoints
+    path('api/v1/trading/start/', views.start_trading, name='start_trading'),
+    path('api/v1/trading/stop/', views.stop_trading, name='stop_trading'),
+    path('api/v1/trading/update-parameters/', views.update_trading_parameters, name='update_trading_parameters'),
+    path('api/v1/trading/status/', views.trading_status, name='trading_status'),
+    
+    # Asset info endpoint
+    path('api/asset-info/', views.get_asset_info, name='get_asset_info'),
+    
+    # Payment endpoints
+    path('deposit/', views.process_deposit, name='deposit'),
+    path('withdraw/', views.process_withdrawal, name='withdraw'),
+    path('paypal-ipn/', views.paypal_ipn, name='paypal-ipn'),
+    path('paypal/', include('paypal.standard.ipn.urls')),
+    
+    # Success/Cancel pages
+    path('deposit/success/', views.deposit_success, name='deposit_success'),
+    path('deposit/cancelled/', views.deposit_cancelled, name='deposit_cancelled'),
 ]

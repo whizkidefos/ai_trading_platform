@@ -159,37 +159,27 @@ SASS_OUTPUT_STYLE = 'compressed'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Login URL
-LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = '/'
+# Authentication settings
+LOGIN_REDIRECT_URL = '/trading/dashboard/'
+LOGIN_URL = '/login/'
 LOGOUT_REDIRECT_URL = '/'
 
-
-# Alpha Vantage API key
-ALPHA_VANTAGE_API_KEY = config('ALPHA_VANTAGE_API_KEY')
-
-# News API settings
-NEWS_API_KEY = config('NEWS_API_KEY')
-
-# Celery settings
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'
-
 # PayPal settings
-PAYPAL_RECEIVER_EMAIL = config('PAYPAL_RECEIVER_EMAIL')
-PAYPAL_TEST = config('PAYPAL_TEST', default=True, cast=bool)
-PAYPAL_CLIENT_ID = config('PAYPAL_CLIENT_ID')
+PAYPAL_RECEIVER_EMAIL = os.getenv('PAYPAL_RECEIVER_EMAIL', 'your-paypal-business-email@example.com')
+PAYPAL_TEST = False  # Using live PayPal for real money transactions
+PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')  # Your PayPal client ID
 
-# Stripe settings
-STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY')
-STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY')
+# PayPal Live Settings
+PAYPAL_BUY_BUTTON_IMAGE = 'https://www.paypalobjects.com/webstatic/en_US/i/buttons/buy-logo-medium.png'
+PAYPAL_SUBSCRIPTION_BUTTON_IMAGE = 'https://www.paypalobjects.com/webstatic/en_US/i/buttons/subscribe-logo-medium.png'
+PAYPAL_DONATION_BUTTON_IMAGE = 'https://www.paypalobjects.com/webstatic/en_US/i/buttons/donate-logo-medium.png'
 
-# Alpaca Trading API Configuration
-ALPACA_API_KEY = os.getenv('ALPACA_API_KEY')
-ALPACA_SECRET_KEY = os.getenv('ALPACA_SECRET_KEY')
-ALPACA_BASE_URL = os.getenv('ALPACA_BASE_URL', 'https://api.alpaca.markets')  # Use 'https://paper-api.alpaca.markets' for paper trading
+# Bank Transfer Settings
+BANK_NAME = os.getenv('BANK_NAME', 'Example Bank')
+BANK_ACCOUNT_NUMBER = os.getenv('BANK_ACCOUNT_NUMBER', '1234567890')
+
+# Cryptocurrency Settings
+CRYPTO_WALLET_ADDRESS = os.getenv('CRYPTO_WALLET_ADDRESS', 'your-crypto-wallet-address')
 
 # Logging settings
 LOGGING = {

@@ -1,45 +1,41 @@
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render, redirect, HttpResponseRedirect
 from django.contrib.auth.decorators import login_required
-from django.contrib.admin.views.decorators import staff_member_required
-from django.db.models import Sum, Q
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth import login, authenticate
-from django.contrib import messages
-from django.contrib.auth.forms import AuthenticationForm
-from django.views.decorators.http import require_http_methods
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.db import transaction
+from django.views.decorators.http import require_http_methods
+from django.urls import reverse
+from django.conf import settings
+from django.contrib.auth.models import User
+from django.db.models import Sum, Q, Count, Max, Min, Avg
+from django.contrib import messages
+from django.utils import timezone
+from decimal import Decimal
 import json
 import logging
-from decimal import Decimal
-
-from .models import AccountBalance, Trade, TransactionHistory, UserProfile, Transaction
-from .automated_trading import AutomatedTrading
-from .ai_trading import train_model, make_trade_prediction, apply_combined_strategy
-from .forms import UserRegistrationForm, UserProfileForm, UserForm
+import requests
+from django.contrib.admin.views.decorators import staff_member_required
 from paypal.standard.forms import PayPalPaymentsForm
-import stripe
-
-import pandas as pd
-from alpha_vantage.timeseries import TimeSeries
-from django.conf import settings
-from rest_framework.response import Response
+from paypal.standard.ipn.signals import valid_ipn_received
+from paypal.standard.models import ST_PP_COMPLETED
+from django.utils.decorators import method_decorator
 from rest_framework.views import APIView
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 from rest_framework import status
 
-from django.http import HttpResponseRedirect, JsonResponse
-from django.urls import reverse
+from .models import (
+    AccountBalance,
+    Trade,
+    TransactionHistory,
+    UserProfile,
+    Transaction,
+    KYCVerification,
+    WithdrawalRequest,
+    Deposit,
+    TradingAccount
+)
 
-import requests
-import asyncio
-from datetime import datetime
-
-logger = logging.getLogger('trading')
-
-stripe.api_key = settings.STRIPE_SECRET_KEY
-
+logger = logging.getLogger(__name__)
 
 def fetch_finance_news():
     url = 'https://newsapi.org/v2/top-headlines'
@@ -69,7 +65,7 @@ def register(request):
             user = form.save()
             login(request, user)
             messages.success(request, 'Registration successful! Welcome to our trading platform.')
-            return redirect('user_dashboard')
+            return redirect('trading:user_dashboard')
     else:
         form = UserRegistrationForm()
     return render(request, 'registration/register.html', {'form': form})
@@ -118,53 +114,94 @@ def admin_transactions(request):
 
 # Redirect to the dashboard when accessing the root URL
 def home(request):
-    return HttpResponseRedirect(reverse('user_dashboard'))
+    """Landing page view with market metrics."""
+    try:
+        # Get market data
+        btc_price = get_market_data('BTC/USD')
+        eth_price = get_market_data('ETH/USD')
+        
+        # Get platform statistics
+        total_users = User.objects.count()
+        total_trades = Trade.objects.count()
+        success_trades = Trade.objects.filter(profit__gt=0).count()
+        success_rate = (success_trades / total_trades * 100) if total_trades > 0 else 0
+        
+        context = {
+            'market_data': {
+                'btc_price': btc_price,
+                'eth_price': eth_price,
+            },
+            'platform_stats': {
+                'total_users': total_users,
+                'total_trades': total_trades,
+                'success_rate': round(success_rate, 1),
+            }
+        }
+        
+        return render(request, 'trading/home.html', context)
+    except Exception as e:
+        logger.error(f"Error in home view: {str(e)}")
+        return render(request, 'trading/home.html')
 
 
 @login_required
 def user_dashboard(request):
-    user_profile = request.user.userprofile
     try:
-        account_balance = AccountBalance.objects.get(user=user_profile)
-    except AccountBalance.DoesNotExist:
-        account_balance = AccountBalance.objects.create(user=user_profile)
-    
-    # Get trading metrics
-    trades = Trade.objects.filter(user=user_profile)
-    total_trades = trades.count()
-    active_trades = trades.filter(status='active').count()
-    
-    # Calculate success rate
-    successful_trades = trades.filter(profit__gt=0).count()
-    success_rate = (successful_trades / total_trades * 100) if total_trades > 0 else 0
-    
-    # Calculate total profit
-    total_profit = trades.aggregate(Sum('profit'))['profit__sum'] or 0
-    
-    # Get recent trading activity
-    recent_trades = trades.order_by('-trade_time')[:10]
-    recent_transactions = TransactionHistory.objects.filter(user=user_profile).order_by('-timestamp')[:10]
-    
-    # Get market data
-    market_data = get_market_data()
-    
-    context = {
-        'user': request.user,
-        'stripe_public_key': settings.STRIPE_PUBLISHABLE_KEY,
-        'paypal_client_id': settings.PAYPAL_CLIENT_ID,
-        'paypal_receiver_email': settings.PAYPAL_RECEIVER_EMAIL,
-        'account_balance': account_balance.balance_usd,
-        'balance': account_balance,
-        'total_trades': total_trades,
-        'active_trades': active_trades,
-        'success_rate': round(success_rate, 2),
-        'total_profit': total_profit,
-        'recent_trades': recent_trades,
-        'recent_transactions': recent_transactions,
-        'market_data': market_data,
-    }
-    
-    return render(request, 'dashboard.html', context)
+        # Get or create user profile
+        user_profile, created = UserProfile.objects.get_or_create(user=request.user)
+        
+        # Get or create account balance (this maintains the original balance)
+        account_balance, created = AccountBalance.objects.get_or_create(
+            user=user_profile,
+            defaults={'balance_usd': user_profile.balance}  # Use profile balance as default
+        )
+        
+        # Get or create trading account
+        trading_account, created = TradingAccount.objects.get_or_create(
+            user=request.user,
+            defaults={'balance': account_balance.balance_usd}  # Sync with account balance
+        )
+        
+        # Ensure balances are synced
+        if account_balance.balance_usd != trading_account.balance:
+            trading_account.balance = account_balance.balance_usd
+            trading_account.save()
+        
+        # Get all trades first
+        trades_queryset = Trade.objects.filter(user_profile=user_profile)
+        
+        # Calculate trading statistics from full queryset
+        total_trades = trades_queryset.count()
+        successful_trades = trades_queryset.filter(profit__gt=0).count()
+        win_rate = (successful_trades / total_trades * 100) if total_trades > 0 else 0
+        total_profit = trades_queryset.aggregate(Sum('profit'))['profit__sum'] or 0
+        
+        # Get recent trades for display
+        recent_trades = trades_queryset.order_by('-timestamp')[:10]
+        
+        # Get recent transactions
+        transactions = TransactionHistory.objects.filter(user=user_profile).order_by('-timestamp')[:5]
+        
+        context = {
+            'user': request.user,
+            'user_profile': user_profile,
+            'account_balance': account_balance.balance_usd,
+            'trading_account': trading_account,
+            'trades': recent_trades,
+            'total_trades': total_trades,
+            'win_rate': round(win_rate, 2),
+            'total_profit': total_profit,
+            'transactions': transactions,
+            'paypal_client_id': settings.PAYPAL_CLIENT_ID,
+            'paypal_receiver_email': settings.PAYPAL_RECEIVER_EMAIL,
+        }
+        
+        return render(request, 'trading/dashboard.html', context)
+        
+    except Exception as e:
+        logger.error(f"Dashboard error: {str(e)}")
+        messages.error(request, f"Error loading dashboard: {str(e)}")
+        return redirect('trading:home')
 
 
 @login_required
@@ -232,26 +269,33 @@ def get_trading_status(request):
     """Get current trading status and performance metrics"""
     try:
         user_profile = request.user.userprofile
-        account_balance = AccountBalance.objects.get(user=user_profile)
         
-        # Get today's trades and performance
-        today = datetime.now().date()
+        # Get today's trades
+        today = timezone.now().date()
         today_trades = Trade.objects.filter(
-            user=user_profile,
+            user_profile=user_profile,
             trade_time__date=today
         )
         
-        total_profit = today_trades.aggregate(
-            total_profit=Sum('profit_or_loss')
-        )['total_profit'] or 0
-
+        # Calculate today's metrics
+        trades_today = today_trades.count()
+        profit_today = sum(trade.profit for trade in today_trades if trade.profit)
+        total_traded = sum(trade.amount for trade in today_trades)
+        profit_percentage = (profit_today / total_traded * 100) if total_traded > 0 else 0
+        
+        # Get active positions
+        active_positions = Trade.objects.filter(
+            user_profile=user_profile,
+            status='active'
+        ).count()
+        
         return JsonResponse({
             'status': 'success',
             'is_trading_active': user_profile.is_trading_active,
-            'current_balance': float(account_balance.balance_usd),
-            'trades_today': today_trades.count(),
-            'profit_today': float(total_profit),
-            'last_trade_time': today_trades.last().trade_time.isoformat() if today_trades.exists() else None
+            'trades_today': trades_today,
+            'profit_today': round(profit_percentage, 2),
+            'active_positions': active_positions,
+            'last_update': timezone.now().isoformat()
         })
     except Exception as e:
         logger.error(f"Error getting trading status: {str(e)}")
@@ -292,7 +336,7 @@ def profile(request):
     user_profile = request.user.userprofile
     
     # Calculate trading statistics
-    trades = Trade.objects.filter(user=user_profile)
+    trades = Trade.objects.filter(user_profile=user_profile)
     total_trades = trades.count()
     successful_trades = trades.filter(profit__gt=0).count()
     total_profit = trades.aggregate(Sum('profit'))['profit__sum'] or 0
@@ -330,10 +374,29 @@ def edit_profile(request):
     })
 
 
+def get_alpha_vantage_data(symbol, function='TIME_SERIES_INTRADAY', interval='5min'):
+    """Helper function to fetch data from Alpha Vantage API"""
+    api_key = settings.ALPHA_VANTAGE_API_KEY
+    base_url = 'https://www.alphavantage.co/query'
+    
+    params = {
+        'function': function,
+        'symbol': symbol,
+        'interval': interval,
+        'apikey': api_key
+    }
+    
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data from Alpha Vantage: {e}")
+        return None
+
 def get_market_data(asset='AAPL'):
     try:
-        ts = TimeSeries(key=settings.ALPHA_VANTAGE_API_KEY, output_format='pandas')
-        data, meta_data = ts.get_intraday(symbol=asset, interval='60min', outputsize='compact')
+        data = get_alpha_vantage_data(asset)
         return data
     except Exception as e:
         logger.error(f"Error fetching market data: {str(e)}")
@@ -348,9 +411,9 @@ def handle_selected_asset(request):
 
         try:
             # Process the selected asset
-            data = get_market_data(asset)
+            data = get_alpha_vantage_data(asset)
             
-            if data is None:
+            if not data:
                 # Return default/mock data if real data fetch fails
                 return JsonResponse({
                     "asset": asset,
@@ -432,7 +495,7 @@ def execute_trade(request):
 
         # Execute the trade
         new_trade = Trade.objects.create(
-            user=user_profile,
+            user_profile=user_profile,
             asset=asset,
             trade_type=action,
             amount=amount,
@@ -517,20 +580,15 @@ def paypal_deposit(request):
 # Payment success and cancel views
 @login_required
 def payment_success(request):
-    # Assuming the amount and transaction details can be fetched from the request/session
-    user_profile = request.user.userprofile
-    amount_credited = 100.00  # This should be dynamic based on the transaction
+    """Handle successful payment"""
+    messages.success(request, 'Payment successful! Your account will be credited once the payment is confirmed.')
+    return redirect('trading:user_dashboard')
 
-    # Update the user's account balance
-    balance = AccountBalance.objects.get(user=user_profile)
-    balance.balance_usd += amount_credited
-    balance.save()
-
-    return render(request, 'trading/payment_success.html', {'amount_credited': amount_credited})
-
-
+@login_required
 def payment_cancelled(request):
-    return render(request, 'trading/payment_cancelled.html')
+    """Handle cancelled payment"""
+    messages.warning(request, 'Payment was cancelled. Your account has not been charged.')
+    return redirect('trading:user_dashboard')
 
 
 # Stripe checkout view
@@ -557,16 +615,9 @@ def stripe_checkout(request):
 # Payment success view for Stripe
 @login_required
 def payment_success_stripe(request):
-    # Assuming the amount and transaction details are fetched from the session
-    user_profile = request.user.userprofile
-    amount_credited = 100.00  # This should be dynamic
-
-    # Update the user's account balance
-    balance = AccountBalance.objects.get(user=user_profile)
-    balance.balance_usd += amount_credited
-    balance.save()
-
-    return render(request, 'trading/payment_success.html', {'amount_credited': amount_credited})
+    """Handle successful payment"""
+    messages.success(request, 'Payment successful! Your account will be credited once the payment is confirmed.')
+    return redirect('trading:user_dashboard')
 
 def get_trading_news(request):
     """Fetch latest trading news from newsapi.org"""
@@ -588,135 +639,91 @@ def get_trading_news(request):
 @login_required
 @require_http_methods(["POST"])
 def process_deposit(request):
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    
+    """Process deposit request"""
     try:
-        logger.debug("Starting deposit process")
-        logger.debug(f"Request body: {request.body.decode()}")
-        
-        # Parse request data
         data = json.loads(request.body)
-        order_id = data.get('order_id')
-        payment_id = data.get('payment_id')
         amount = Decimal(str(data.get('amount', '0')))
-        status = data.get('status')
-        details = data.get('details', {})
+        payment_method = data.get('payment_method', '')
 
-        logger.info(f"Processing deposit - Order ID: {order_id}, Payment ID: {payment_id}, Amount: {amount}, Status: {status}")
-        
-        # Validate required fields
-        if not all([order_id, payment_id, amount, status]):
-            logger.error("Missing required fields")
+        if amount < 10:
             return JsonResponse({
                 'status': 'error',
-                'message': 'Missing required payment information'
+                'message': 'Minimum deposit amount is $10'
             }, status=400)
 
-        # Validate payment status
-        if status != 'COMPLETED':
-            logger.error(f"Invalid payment status: {status}")
+        if not payment_method:
             return JsonResponse({
                 'status': 'error',
-                'message': 'Payment not completed'
+                'message': 'Please select a payment method'
             }, status=400)
 
-        # Check for duplicate payment
-        if Transaction.objects.filter(Q(order_id=order_id) | Q(payment_id=payment_id)).exists():
-            logger.warning(f"Duplicate payment detected - Order ID: {order_id}, Payment ID: {payment_id}")
+        user_profile = request.user.userprofile
+
+        # For PayPal payments, create a PayPal payment session
+        if payment_method.lower() == 'paypal':
+            paypal_dict = {
+                "business": settings.PAYPAL_RECEIVER_EMAIL,
+                "amount": str(amount),
+                "item_name": "AI Trading Platform - Account Deposit",
+                "invoice": str(uuid.uuid4()),
+                "notify_url": request.build_absolute_uri(reverse('paypal-ipn')),
+                "return": request.build_absolute_uri(reverse('trading:payment_success')),
+                "cancel_return": request.build_absolute_uri(reverse('trading:payment_cancelled')),
+                "custom": str(request.user.id),  # Pass user ID for IPN
+                "currency_code": "USD",
+                "no_shipping": "1"  # No shipping address needed for digital goods
+            }
+            form = PayPalPaymentsForm(initial=paypal_dict)
             return JsonResponse({
-                'status': 'error',
-                'message': 'This payment has already been processed'
-            }, status=400)
+                'status': 'redirect',
+                'url': form.render().split('action="')[1].split('"')[0]
+            })
 
-        try:
-            # Start transaction
-            with transaction.atomic():
-                user_profile = request.user.userprofile
-                
-                # Update account balance
-                account_balance = AccountBalance.objects.select_for_update().get(user=user_profile)
-                previous_balance = account_balance.balance_usd
-                account_balance.balance_usd += amount
-                account_balance.save()
-
-                logger.info(f"Updated balance from ${previous_balance} to ${account_balance.balance_usd}")
-
-                # Create transaction record
-                transaction_record = Transaction.objects.create(
-                    user=user_profile,
-                    transaction_type='DEPOSIT',
-                    amount=amount,
-                    method='PAYPAL',
-                    status='COMPLETED',
-                    order_id=order_id,
-                    payment_id=payment_id,
-                    details=json.dumps(details)
-                )
-
-                logger.info(f"Created transaction record: {transaction_record.id}")
-
-                # Create transaction history record
-                TransactionHistory.objects.create(
-                    user=user_profile,
-                    transaction_type='DEPOSIT',
-                    amount=amount,
-                    status='completed',
-                    description=f'PayPal deposit (Order ID: {order_id})'
-                )
-
-                # Send WebSocket notification
-                try:
-                    channel_layer = get_channel_layer()
-                    async_to_sync(channel_layer.group_send)(
-                        "trades",
-                        {
-                            "type": "trade_message",
-                            "message": {
-                                "type": "balance_update",
-                                "data": {
-                                    "new_balance": str(account_balance.balance_usd),
-                                    "transaction_id": transaction_record.id
-                                }
-                            }
-                        }
-                    )
-                except Exception as ws_error:
-                    logger.error(f"WebSocket notification error: {str(ws_error)}")
-                    # Continue processing even if WebSocket fails
-
-                return JsonResponse({
-                    'status': 'success',
-                    'message': f'Successfully deposited ${amount}',
-                    'new_balance': str(account_balance.balance_usd)
-                })
-
-        except AccountBalance.DoesNotExist:
-            logger.error(f"Account balance not found for user {request.user.id}")
+        # For bank transfer, return instructions
+        elif payment_method.lower() == 'bank_transfer':
             return JsonResponse({
-                'status': 'error',
-                'message': 'Account balance not found'
-            }, status=404)
-            
-        except Exception as db_error:
-            logger.error(f"Database error: {str(db_error)}", exc_info=True)
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Database error occurred while processing payment'
-            }, status=500)
+                'status': 'instructions',
+                'message': 'Please transfer the amount to our bank account:',
+                'details': {
+                    'bank_name': 'Example Bank',
+                    'account_number': 'XXXXXXXXXXXX',
+                    'routing_number': 'XXXXXXXXX',
+                    'reference': f'DEP-{request.user.id}-{int(time.time())}'
+                }
+            })
 
-    except json.JSONDecodeError as json_error:
-        logger.error(f"JSON decode error: {str(json_error)}")
+        # For crypto payments
+        elif payment_method.lower() == 'crypto':
+            return JsonResponse({
+                'status': 'instructions',
+                'message': 'Please send the crypto to the following address:',
+                'details': {
+                    'btc_address': 'XXXXXXXXXXXXXXXXXXXXX',
+                    'eth_address': 'XXXXXXXXXXXXXXXXXXXXX',
+                    'reference': f'DEP-{request.user.id}-{int(time.time())}'
+                }
+            })
+
         return JsonResponse({
             'status': 'error',
-            'message': 'Invalid payment data format'
+            'message': 'Unsupported payment method'
         }, status=400)
-        
-    except Exception as e:
-        logger.error(f"Unexpected error in process_deposit: {str(e)}", exc_info=True)
+
+    except json.JSONDecodeError:
         return JsonResponse({
             'status': 'error',
-            'message': 'An error occurred while processing your deposit'
+            'message': 'Invalid JSON data'
+        }, status=400)
+    except decimal.InvalidOperation:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid amount'
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Deposit error: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'An error occurred processing your deposit'
         }, status=500)
 
 @login_required
@@ -734,158 +741,862 @@ def get_balance(request):
         })
 
 @login_required
-def process_withdrawal_view(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
-    
-    data = json.loads(request.body)
-    amount = data.get("amount")
-    
-    if not amount:
-        return JsonResponse({"status": "error", "message": "Amount is required"})
-    
-    result = process_withdrawal(request.user.userprofile, amount)
-    return JsonResponse(result)
+@require_http_methods(['POST'])
+def process_withdrawal(request):
+    """Process withdrawal requests with KYC/AML checks"""
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            amount = Decimal(str(data.get('amount', '0')))
+            withdrawal_method = data.get('withdrawal_method')
+
+            if amount <= 0:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Invalid withdrawal amount'
+                }, status=400)
+
+            user_profile = request.user.userprofile
+
+            # Check if user has sufficient balance
+            if user_profile.balance < amount:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Insufficient funds'
+                }, status=400)
+
+            # Check KYC status for withdrawals over $1000
+            if amount > 1000:
+                try:
+                    kyc = KYCVerification.objects.get(user=request.user)
+                    if kyc.verification_status != 'approved':
+                        return JsonResponse({
+                            'status': 'error',
+                            'message': 'KYC verification required for withdrawals over $1,000',
+                            'kyc_status': kyc.verification_status
+                        }, status=403)
+                except KYCVerification.DoesNotExist:
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'KYC verification required for withdrawals over $1,000',
+                        'kyc_status': 'not_submitted'
+                    }, status=403)
+
+            # Create withdrawal request
+            withdrawal = WithdrawalRequest.objects.create(
+                user=request.user,
+                amount=amount,
+                withdrawal_method=withdrawal_method
+            )
+
+            # Add withdrawal-specific details based on method
+            if withdrawal_method == 'bank_transfer':
+                withdrawal.bank_name = data.get('bank_name')
+                withdrawal.account_number = data.get('account_number')
+                withdrawal.routing_number = data.get('routing_number')
+            elif withdrawal_method == 'paypal':
+                withdrawal.paypal_email = data.get('paypal_email')
+            elif withdrawal_method == 'crypto':
+                withdrawal.crypto_address = data.get('crypto_address')
+                withdrawal.crypto_network = data.get('crypto_network')
+            
+            withdrawal.save()
+
+            # Perform AML check
+            aml_status = perform_aml_check(withdrawal)
+            withdrawal.aml_check_status = aml_status
+            withdrawal.aml_check_date = timezone.now()
+            withdrawal.save()
+
+            if aml_status == 'flagged':
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Withdrawal flagged for review. Our team will contact you.',
+                    'withdrawal_id': withdrawal.id
+                }, status=403)
+
+            # If all checks pass, process the withdrawal
+            if aml_status == 'passed':
+                # Reserve the amount
+                user_profile.balance -= amount
+                user_profile.save()
+
+                # Record the transaction
+                Transaction.objects.create(
+                    user=user_profile,
+                    transaction_type='withdrawal',
+                    amount=amount,
+                    status='pending',
+                    payment_method=withdrawal_method
+                )
+
+                return JsonResponse({
+                    'status': 'success',
+                    'message': 'Withdrawal request processed successfully',
+                    'withdrawal_id': withdrawal.id,
+                    'new_balance': float(user_profile.balance)
+                })
+
+            return JsonResponse({
+                'status': 'pending',
+                'message': 'Withdrawal request is being processed',
+                'withdrawal_id': withdrawal.id
+            })
+
+        except (json.JSONDecodeError, decimal.InvalidOperation):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid withdrawal data'
+            }, status=400)
+        except Exception as e:
+            logger.error(f"Withdrawal error: {str(e)}")
+            return JsonResponse({
+                'status': 'error',
+                'message': 'An error occurred processing your withdrawal'
+            }, status=500)
+
+    return JsonResponse({
+        'status': 'error',
+        'message': 'Invalid request method'
+    }, status=405)
 
 @login_required
 @require_http_methods(['POST'])
-def process_withdrawal(request):
-    """Process withdrawal request to bank or PayPal"""
+def process_withdrawal_view(request):
     try:
         data = json.loads(request.body)
         amount = Decimal(data.get('amount'))
         method = data.get('method')
-        bank_account = data.get('bank_account')
-        paypal_email = data.get('paypal_email')
-
-        user_profile = request.user.userprofile
-        account_balance = AccountBalance.objects.get(user=user_profile)
+        address = data.get('address')
 
         # Validate amount
         if amount < Decimal('10.00'):
             return JsonResponse({
                 'status': 'error',
-                'message': 'Minimum withdrawal amount is $10'
-            }, status=400)
+                'message': 'Minimum withdrawal amount is $10.00'
+            })
 
-        if amount > account_balance.balance_usd:
+        # Get user's trading account
+        trading_account = TradingAccount.objects.get(user=request.user)
+        
+        # Check if user has sufficient balance
+        if trading_account.balance < amount:
             return JsonResponse({
                 'status': 'error',
-                'message': 'Insufficient balance for withdrawal'
-            }, status=400)
+                'message': 'Insufficient balance'
+            })
 
-        # Validate withdrawal method details
-        if method == 'bank' and not bank_account:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Bank account number is required'
-            }, status=400)
-        elif method == 'paypal' and not paypal_email:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'PayPal email is required'
-            }, status=400)
+        # Create withdrawal request
+        withdrawal = Withdrawal.objects.create(
+            user=request.user,
+            amount=amount,
+            method=method,
+            address=address,
+            status='pending'
+        )
 
-        # Process withdrawal based on method
-        if method == 'bank':
-            # Implement bank transfer logic here
-            # For now, just deduct the balance
-            account_balance.balance_usd -= amount
-            account_balance.save()
+        # Deduct amount from trading account
+        trading_account.balance -= amount
+        trading_account.save()
 
-            # Create withdrawal transaction record
-            Transaction.objects.create(
-                user=user_profile,
-                transaction_type='WITHDRAWAL',
-                amount=amount,
-                method='BANK',
-                status='COMPLETED',
-                details=f'Bank transfer to account {bank_account}'
-            )
-        else:  # PayPal
-            # Implement PayPal transfer logic here
-            # For now, just deduct the balance
-            account_balance.balance_usd -= amount
-            account_balance.save()
-
-            # Create withdrawal transaction record
-            Transaction.objects.create(
-                user=user_profile,
-                transaction_type='WITHDRAWAL',
-                amount=amount,
-                method='PAYPAL',
-                status='COMPLETED',
-                details=f'PayPal transfer to {paypal_email}'
-            )
+        # Create transaction record
+        Transaction.objects.create(
+            user=request.user,
+            transaction_type='withdrawal',
+            amount=amount,
+            status='completed',
+            reference=f'WD-{withdrawal.id}'
+        )
 
         return JsonResponse({
             'status': 'success',
-            'message': f'Successfully processed withdrawal of ${amount}',
-            'new_balance': str(account_balance.balance_usd)
+            'message': 'Withdrawal request submitted successfully',
+            'withdrawal_id': withdrawal.id
         })
 
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError):
         return JsonResponse({
             'status': 'error',
             'message': 'Invalid request data'
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Error processing withdrawal: {str(e)}")
+        })
+    except TradingAccount.DoesNotExist:
         return JsonResponse({
             'status': 'error',
-            'message': 'Failed to process withdrawal'
+            'message': 'Trading account not found'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        })
+
+def perform_aml_check(withdrawal):
+    """
+    Perform Anti-Money Laundering checks on withdrawal
+    Returns: 'passed', 'pending', or 'flagged'
+    """
+    # Check for suspicious patterns
+    user = withdrawal.user
+    amount = withdrawal.amount
+    
+    # Get user's transaction history
+    recent_withdrawals = WithdrawalRequest.objects.filter(
+        user=user,
+        request_date__gte=timezone.now() - timezone.timedelta(days=30)
+    ).aggregate(total=Sum('amount'))
+    
+    monthly_withdrawal_total = recent_withdrawals['total'] or 0
+    
+    # Flag for review if:
+    # 1. Single withdrawal over $10,000
+    # 2. Monthly withdrawals over $20,000
+    # 3. Multiple withdrawals in short time period
+    if amount > 10000:
+        return 'flagged'
+    
+    if monthly_withdrawal_total > 20000:
+        return 'flagged'
+    
+    recent_count = WithdrawalRequest.objects.filter(
+        user=user,
+        request_date__gte=timezone.now() - timezone.timedelta(hours=24)
+    ).count()
+    
+    if recent_count > 3:
+        return 'flagged'
+    
+    return 'passed'
+
+@login_required
+def submit_kyc(request):
+    """Submit KYC verification documents"""
+    if request.method == 'POST':
+        try:
+            # Create or update KYC verification
+            kyc, created = KYCVerification.objects.get_or_create(user=request.user)
+            
+            # Update fields from form data
+            kyc.full_name = request.POST.get('full_name')
+            kyc.date_of_birth = request.POST.get('date_of_birth')
+            kyc.address = request.POST.get('address')
+            kyc.country = request.POST.get('country')
+            kyc.id_type = request.POST.get('id_type')
+            kyc.id_number = request.POST.get('id_number')
+            kyc.id_expiry_date = request.POST.get('id_expiry_date')
+            
+            # Handle file uploads
+            if 'id_front' in request.FILES:
+                kyc.id_front_image = request.FILES['id_front']
+            if 'id_back' in request.FILES:
+                kyc.id_back_image = request.FILES['id_back']
+            if 'proof_of_address' in request.FILES:
+                kyc.proof_of_address = request.FILES['proof_of_address']
+            
+            kyc.verification_status = 'pending'
+            kyc.submission_date = timezone.now()
+            kyc.save()
+            
+            return JsonResponse({
+                'status': 'success',
+                'message': 'KYC documents submitted successfully'
+            })
+            
+        except Exception as e:
+            logger.error(f"KYC submission error: {str(e)}")
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Error submitting KYC documents'
+            }, status=500)
+    
+    return JsonResponse({
+        'status': 'error',
+        'message': 'Invalid request method'
+    }, status=405)
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+@api_view(['POST'])
+def start_trading(request):
+    """Start automated trading for the user."""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        logger.info(f"Starting automated trading for user {request.user.username}")
+        user_profile = UserProfile.objects.get(user=request.user)
+        
+        # Enable automated trading
+        user_profile.automated_trading_enabled = True
+        user_profile.save()
+        
+        logger.info(f"Automated trading enabled for user {request.user.username}")
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading started successfully'
+        })
+        
+    except UserProfile.DoesNotExist:
+        logger.error(f"User profile not found for {request.user.username}")
+        return JsonResponse({
+            'error': 'User profile not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error starting automated trading: {str(e)}")
+        return JsonResponse({
+            'error': 'Failed to start automated trading'
         }, status=500)
 
-from django.utils.decorators import method_decorator
-from django.contrib.auth.decorators import login_required
+@api_view(['POST'])
+def stop_trading(request):
+    """Stop automated trading for the user."""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        logger.info(f"Stopping automated trading for user {request.user.username}")
+        user_profile = UserProfile.objects.get(user=request.user)
+        
+        # Disable automated trading
+        user_profile.automated_trading_enabled = False
+        user_profile.save()
+        
+        logger.info(f"Automated trading disabled for user {request.user.username}")
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading stopped successfully'
+        })
+        
+    except UserProfile.DoesNotExist:
+        logger.error(f"User profile not found for {request.user.username}")
+        return JsonResponse({
+            'error': 'User profile not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error stopping automated trading: {str(e)}")
+        return JsonResponse({
+            'error': 'Failed to stop automated trading'
+        }, status=500)
 
-@method_decorator(login_required, name='dispatch')
-class StartAutomatedTradingView(APIView):
-    def post(self, request):
+@api_view(['POST'])
+def update_trading_parameters(request):
+    """Update trading parameters for automated trading."""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        logger.info(f"Updating trading parameters for user {request.user.username}")
+        user_profile = UserProfile.objects.get(user=request.user)
+        
+        # Get parameters from request
+        data = request.data
+        logger.info(f"Received parameters: {data}")
+        
+        # Validate parameters
         try:
-            # Print request data for debugging
-            print("Request data:", request.data)
+            trade_amount = float(data.get('tradeAmount', 0))
+            min_price = float(data.get('minPrice', 0))
+            max_price = float(data.get('maxPrice', 0))
             
-            # Get data from request.data instead of parsing JSON
-            min_amount = request.data.get('min_trade_amount', 10)
-            max_amount = request.data.get('max_trade_amount', 100)
-            
-            print(f"Min amount: {min_amount}, Max amount: {max_amount}")
-            
-            # Save automated trading settings to user profile
-            profile = request.user.userprofile
-            profile.automated_trading_enabled = True
-            profile.min_trade_amount = Decimal(str(min_amount))
-            profile.max_trade_amount = Decimal(str(max_amount))
-            profile.save()
-            
-            return Response({'status': 'success', 'message': 'Automated trading enabled'})
-        except Exception as e:
-            print(f"Error in StartAutomatedTradingView: {str(e)}")
-            return Response({'status': 'error', 'message': str(e)}, status=400)
+            if trade_amount <= 0:
+                return JsonResponse({'error': 'Trade amount must be greater than 0'}, status=400)
+            if min_price <= 0:
+                return JsonResponse({'error': 'Minimum price must be greater than 0'}, status=400)
+            if max_price <= min_price:
+                return JsonResponse({'error': 'Maximum price must be greater than minimum price'}, status=400)
+                
+        except (TypeError, ValueError) as e:
+            logger.error(f"Invalid parameter values: {str(e)}")
+            return JsonResponse({'error': 'Invalid parameter values'}, status=400)
+        
+        # Update trading parameters
+        user_profile.trade_amount = trade_amount
+        user_profile.min_price = min_price
+        user_profile.max_price = max_price
+        user_profile.save()
+        
+        logger.info(f"Trading parameters updated for user {request.user.username}")
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Trading parameters updated successfully'
+        })
+        
+    except UserProfile.DoesNotExist:
+        logger.error(f"User profile not found for {request.user.username}")
+        return JsonResponse({
+            'error': 'User profile not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error updating trading parameters: {str(e)}")
+        return JsonResponse({
+            'error': 'Failed to update trading parameters'
+        }, status=500)
 
-@method_decorator(login_required, name='dispatch')
-class StopAutomatedTradingView(APIView):
-    def post(self, request):
-        try:
-            profile = request.user.userprofile
-            profile.automated_trading_enabled = False
-            profile.save()
-            return Response({'status': 'success', 'message': 'Automated trading disabled'})
-        except Exception as e:
-            print(f"Error in StopAutomatedTradingView: {str(e)}")
-            return Response({'status': 'error', 'message': str(e)}, status=400)
+@api_view(['GET'])
+def trading_status(request):
+    """Get the current trading status and performance metrics."""
+    try:
+        if not request.user.is_authenticated:
+            return JsonResponse({'error': 'Authentication required'}, status=401)
+        
+        logger.info(f"Getting trading status for user {request.user.username}")
+        user_profile = UserProfile.objects.get(user=request.user)
+        
+        # Get trading statistics
+        trades = Trade.objects.filter(user_profile=user_profile)
+        active_trades = trades.filter(status='open').count()
+        completed_trades = trades.filter(status='closed')
+        total_trades = completed_trades.count()
+        
+        response_data = {
+            'is_trading': user_profile.automated_trading_enabled,
+            'active_trades': active_trades,
+            'total_profit': 0,
+            'win_rate': 0,
+            'last_trade_time': None
+        }
+        
+        if total_trades > 0:
+            profitable_trades = completed_trades.filter(profit__gt=0).count()
+            response_data['win_rate'] = (profitable_trades / total_trades) * 100
+            total_profit = completed_trades.aggregate(Sum('profit'))['profit__sum'] or 0
+            response_data['total_profit'] = float(total_profit)
+            
+            last_trade = trades.order_by('-trade_time').first()
+            if last_trade:
+                response_data['last_trade_time'] = last_trade.trade_time.isoformat()
+        
+        logger.info(f"Trading status retrieved for user {request.user.username}")
+        return JsonResponse(response_data)
+        
+    except UserProfile.DoesNotExist:
+        logger.error(f"User profile not found for {request.user.username}")
+        return JsonResponse({
+            'error': 'User profile not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error getting trading status: {str(e)}")
+        return JsonResponse({
+            'error': 'Failed to get trading status'
+        }, status=500)
 
-@method_decorator(login_required, name='dispatch')
-class TradingStatusView(APIView):
-    def get(self, request):
-        try:
-            profile = request.user.userprofile
-            return Response({
-                'auto_trading_enabled': profile.automated_trading_enabled,
-                'min_trade_amount': float(profile.min_trade_amount),
-                'max_trade_amount': float(profile.max_trade_amount)
+@csrf_exempt
+def paypal_ipn(request):
+    """Process PayPal IPN (Instant Payment Notification)"""
+    try:
+        if request.method == "POST":
+            # Verify the IPN
+            form = PayPalIPNForm(request.POST)
+            if form.is_valid():
+                ipn_obj = form.save(commit=False)
+                ipn_obj.save()
+                
+                # Verify that the payment status is Completed
+                if ipn_obj.payment_status == "Completed":
+                    # Get the user from the custom field
+                    try:
+                        user = User.objects.get(id=int(ipn_obj.custom))
+                        amount = Decimal(ipn_obj.mc_gross)
+                        
+                        # Update user's account balance
+                        account_balance, _ = AccountBalance.objects.get_or_create(user=user.userprofile)
+                        account_balance.balance_usd += amount
+                        account_balance.save()
+                        
+                        # Create transaction record
+                        TransactionHistory.objects.create(
+                            user=user.userprofile,
+                            transaction_type='DEPOSIT',
+                            amount=amount,
+                            status='completed',
+                            description=f'PayPal deposit - Transaction ID: {ipn_obj.txn_id}'
+                        )
+                        
+                        # Log the successful payment
+                        logger.info(f"Successful PayPal payment: {ipn_obj.txn_id} for user {user.username}")
+                        
+                    except User.DoesNotExist:
+                        logger.error(f"PayPal IPN error: User not found for ID {ipn_obj.custom}")
+                    except Exception as e:
+                        logger.error(f"PayPal IPN processing error: {str(e)}")
+                        
+        return HttpResponse("OKAY")
+    except Exception as e:
+        logger.error(f"PayPal IPN error: {str(e)}")
+        return HttpResponse("ERROR")
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required
+def process_deposit(request):
+    try:
+        data = json.loads(request.body)
+        amount = Decimal(str(data.get('amount', '0')))
+        payment_method = data.get('payment_method')
+
+        if not amount or amount <= 0:
+            return JsonResponse({
+                'error': 'Invalid deposit amount'
+            }, status=400)
+
+        if amount < 10:  # Minimum deposit amount
+            return JsonResponse({
+                'error': 'Minimum deposit amount is $10'
+            }, status=400)
+
+        # Get or create trading account
+        trading_account, _ = TradingAccount.objects.get_or_create(user=request.user)
+
+        # Create deposit record
+        deposit = Deposit.objects.create(
+            user=request.user,
+            amount=amount,
+            payment_method=payment_method,
+            status='pending'
+        )
+
+        if payment_method == 'paypal':
+            # Generate PayPal payment URL
+            paypal_dict = {
+                "business": settings.PAYPAL_RECEIVER_EMAIL,
+                "amount": str(amount),
+                "item_name": f"Deposit to Trading Account - {request.user.username}",
+                "invoice": str(deposit.id),
+                "notify_url": request.build_absolute_uri(reverse('paypal-ipn')),
+                "return": request.build_absolute_uri(reverse('trading:deposit-success')),
+                "cancel_return": request.build_absolute_uri(reverse('trading:deposit-cancelled')),
+                "custom": str(request.user.id)
+            }
+            
+            form = PayPalPaymentsForm(initial=paypal_dict)
+            return JsonResponse({
+                'redirect_url': form.render().split('action="')[1].split('"')[0]
             })
-        except Exception as e:
-            print(f"Error in TradingStatusView: {str(e)}")
-            return Response({'status': 'error', 'message': str(e)}, status=400)
+        
+        elif payment_method == 'bank_transfer':
+            # Return bank transfer instructions
+            return JsonResponse({
+                'message': 'Bank transfer request received',
+                'instructions': {
+                    'bank_name': settings.BANK_NAME,
+                    'account_number': settings.BANK_ACCOUNT_NUMBER,
+                    'reference': f"DEP-{deposit.id}"
+                }
+            })
+        
+        elif payment_method == 'crypto':
+            # Return cryptocurrency payment details
+            return JsonResponse({
+                'message': 'Cryptocurrency deposit request received',
+                'instructions': {
+                    'wallet_address': settings.CRYPTO_WALLET_ADDRESS,
+                    'reference': f"DEP-{deposit.id}"
+                }
+            })
+        
+        return JsonResponse({
+            'error': 'Invalid payment method'
+        }, status=400)
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid JSON data'
+        }, status=400)
+    except ValueError as e:
+        return JsonResponse({
+            'error': str(e)
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Deposit processing error: {str(e)}")
+        return JsonResponse({
+            'error': 'An error occurred while processing your deposit'
+        }, status=500)
+
+@login_required
+def deposit_success(request):
+    """Handle successful deposit"""
+    return render(request, 'trading/deposit_success.html', {
+        'message': 'Your deposit was successful! The funds will be credited to your account shortly.'
+    })
+
+@login_required
+def deposit_cancelled(request):
+    """Handle cancelled deposit"""
+    return render(request, 'trading/deposit_cancelled.html', {
+        'message': 'Your deposit was cancelled. No funds were charged.'
+    })
+
+@login_required
+def kyc_status(request):
+    """Check the status of user's KYC verification."""
+    try:
+        kyc = KYCVerification.objects.get(user=request.user)
+        return JsonResponse({
+            'status': kyc.status,
+            'submitted_at': kyc.submitted_at,
+            'verified_at': kyc.verified_at,
+            'rejection_reason': kyc.rejection_reason
+        })
+    except KYCVerification.DoesNotExist:
+        return JsonResponse({
+            'status': 'not_submitted',
+            'message': 'KYC verification has not been submitted yet.'
+        })
+
+@login_required
+def verify_kyc(request):
+    """Verify KYC documents (admin only)."""
+    if not request.user.is_staff:
+        return JsonResponse({
+            'error': 'Unauthorized access'
+        }, status=403)
+    
+    if request.method != 'POST':
+        return JsonResponse({
+            'error': 'Invalid request method'
+        }, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        kyc_id = data.get('kyc_id')
+        action = data.get('action')  # 'approve' or 'reject'
+        rejection_reason = data.get('rejection_reason')
+        
+        kyc = KYCVerification.objects.get(id=kyc_id)
+        
+        if action == 'approve':
+            kyc.status = 'verified'
+            kyc.verified_at = timezone.now()
+        elif action == 'reject':
+            kyc.status = 'rejected'
+            kyc.rejection_reason = rejection_reason
+        else:
+            return JsonResponse({
+                'error': 'Invalid action'
+            }, status=400)
+        
+        kyc.save()
+        return JsonResponse({
+            'status': 'success',
+            'kyc_status': kyc.status
+        })
+    except KYCVerification.DoesNotExist:
+        return JsonResponse({
+            'error': 'KYC verification not found'
+        }, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'error': 'Invalid JSON data'
+        }, status=400)
+
+@login_required
+def upload_kyc_documents(request):
+    """Handle KYC document uploads."""
+    if request.method != 'POST':
+        return JsonResponse({
+            'error': 'Invalid request method'
+        }, status=405)
+    
+    try:
+        # Get or create KYC verification instance
+        kyc, created = KYCVerification.objects.get_or_create(
+            user=request.user,
+            defaults={'status': 'pending'}
+        )
+        
+        if not created and kyc.status == 'verified':
+            return JsonResponse({
+                'error': 'KYC already verified'
+            }, status=400)
+        
+        # Handle file uploads
+        id_document = request.FILES.get('id_document')
+        proof_of_address = request.FILES.get('proof_of_address')
+        selfie = request.FILES.get('selfie')
+        
+        if not all([id_document, proof_of_address, selfie]):
+            return JsonResponse({
+                'error': 'All required documents must be provided'
+            }, status=400)
+        
+        # Update KYC documents
+        kyc.id_document = id_document
+        kyc.proof_of_address = proof_of_address
+        kyc.selfie = selfie
+        kyc.status = 'pending'
+        kyc.submitted_at = timezone.now()
+        kyc.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'KYC documents uploaded successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error uploading KYC documents: {str(e)}")
+        return JsonResponse({
+            'error': 'Error uploading documents'
+        }, status=500)
+
+@login_required
+@require_http_methods(['POST'])
+def start_trading(request):
+    try:
+        user_profile = request.user.userprofile
+        user_profile.is_trading = True
+        user_profile.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading started successfully'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        })
+
+@login_required
+@require_http_methods(['POST'])
+def stop_trading(request):
+    try:
+        user_profile = request.user.userprofile
+        user_profile.is_trading = False
+        user_profile.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Automated trading stopped successfully'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        })
+
+@login_required
+@require_http_methods(['POST'])
+def update_trading_parameters(request):
+    try:
+        data = json.loads(request.body)
+        user_profile = request.user.userprofile
+        
+        # Update trading parameters
+        user_profile.trade_amount = Decimal(data.get('trade_amount', 0))
+        user_profile.min_price = Decimal(data.get('min_price', 0))
+        user_profile.max_price = Decimal(data.get('max_price', 0))
+        user_profile.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Trading parameters updated successfully'
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        })
+
+@login_required
+def trading_status(request):
+    try:
+        # Get user profile
+        user_profile = request.user.userprofile
+        
+        # Get active trades count
+        active_trades = Trade.objects.filter(
+            user_profile=user_profile,
+            status='active'
+        ).count()
+        
+        # Calculate total profit from completed trades
+        total_profit = Trade.objects.filter(
+            user_profile=user_profile,
+            status='completed'
+        ).aggregate(Sum('profit'))['profit__sum'] or 0
+        
+        # Calculate win rate
+        completed_trades = Trade.objects.filter(
+            user_profile=user_profile,
+            status='completed'
+        )
+        winning_trades = completed_trades.filter(profit__gt=0).count()
+        total_completed = completed_trades.count()
+        win_rate = (winning_trades / total_completed * 100) if total_completed > 0 else 0
+        
+        # Get last trade
+        last_trade = Trade.objects.filter(
+            user_profile=user_profile
+        ).order_by('-timestamp').first()
+        
+        status_data = {
+            'is_trading': user_profile.automated_trading_enabled,
+            'active_trades': active_trades,
+            'total_profit': float(total_profit),
+            'win_rate': win_rate,
+            'last_update': timezone.now().isoformat()
+        }
+        
+        if last_trade:
+            status_data['last_trade'] = {
+                'type': last_trade.trade_type,
+                'amount': str(last_trade.amount),
+                'price': str(last_trade.entry_price),
+                'time': last_trade.timestamp.isoformat()
+            }
+        
+        return JsonResponse(status_data)
+    except UserProfile.DoesNotExist:
+        logger.error(f"User profile not found for user {request.user.username}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'User profile not found'
+        }, status=404)
+    except Exception as e:
+        logger.error(f"Error in trading status for user {request.user.username}: {str(e)}")
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Internal server error'
+        }, status=500)
+
+@api_view(['POST'])
+def get_asset_info(request):
+    """Get asset information from Alpha Vantage API."""
+    try:
+        logger.info("Received asset info request")
+        
+        # Get the asset symbol from request data
+        data = request.data
+        logger.info(f"Request data: {data}")
+        
+        if not isinstance(data, dict):
+            return JsonResponse({
+                'error': 'Invalid request format - expected JSON object'
+            }, status=400)
+            
+        symbol = data.get('asset', 'AAPL')
+        logger.info(f"Getting info for symbol: {symbol}")
+        
+        # For testing, return mock data
+        mock_data = {
+            'symbol': symbol,
+            'price': 150.25,
+            'change': 2.50,
+            'change_percent': 1.69,
+            'volume': 1234567,
+            'price_history': [
+                {'time': '2024-01-09T14:30:00Z', 'price': 148.75},
+                {'time': '2024-01-09T14:35:00Z', 'price': 149.25},
+                {'time': '2024-01-09T14:40:00Z', 'price': 149.75},
+                {'time': '2024-01-09T14:45:00Z', 'price': 150.25}
+            ]
+        }
+        
+        return JsonResponse(mock_data)
+
+    except Exception as e:
+        logger.error(f"Error in get_asset_info: {str(e)}")
+        return JsonResponse({
+            'error': 'An unexpected error occurred while fetching asset data'
+        }, status=500)

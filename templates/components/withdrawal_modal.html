@@ -1,0 +1,43 @@
+<!-- Withdrawal Modal -->
+<div class="modal fade" id="withdrawModal" tabindex="-1" aria-labelledby="withdrawModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="withdrawModalLabel">Withdraw Funds</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="withdrawForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="withdrawAmount" class="form-label">Amount ($)</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary" id="withdrawAmount" name="amount" min="10" step="0.01" required>
+                        <div class="form-text text-light">Minimum withdrawal: $10</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="withdrawMethod" class="form-label">Withdrawal Method</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="withdrawMethod" name="method" required>
+                            <option value="">Select withdrawal method</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="crypto">Cryptocurrency</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="withdrawAddress" class="form-label">Withdrawal Address</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" id="withdrawAddress" name="address" required>
+                        <div class="form-text text-light" id="withdrawAddressHelp">
+                            Enter your PayPal email, bank account, or crypto wallet address.
+                        </div>
+                    </div>
+                    <div class="alert alert-info bg-dark text-info border-info mb-3">
+                        <i class="fas fa-info-circle"></i> Processing time may vary depending on the withdrawal method.
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-warning">Submit Withdrawal Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

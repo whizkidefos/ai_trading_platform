@@ -1,0 +1,64 @@
+<!-- News Ticker -->
+<div class="news-ticker-container bg-dark mb-4">
+    <div class="d-flex align-items-center">
+        <span class="news-label bg-primary text-white px-3 py-2">MARKET NEWS</span>
+        <div class="ticker-wrapper">
+            <div class="ticker-content" id="newsTicker">
+                <!-- News items will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.news-ticker-container {
+    width: 100%;
+    overflow: hidden;
+    border-radius: 4px;
+}
+
+.news-label {
+    min-width: 120px;
+    text-align: center;
+    font-weight: bold;
+    border-right: 2px solid #2c3e50;
+}
+
+.ticker-wrapper {
+    flex: 1;
+    overflow: hidden;
+    padding: 10px 0;
+}
+
+.ticker-content {
+    white-space: nowrap;
+    animation: ticker 60s linear infinite;
+}
+
+.news-item {
+    display: inline-block;
+    padding: 0 30px;
+    color: #fff;
+}
+
+.news-item.positive {
+    color: #2ecc71;
+}
+
+.news-item.negative {
+    color: #e74c3c;
+}
+
+.news-item.neutral {
+    color: #3498db;
+}
+
+@keyframes ticker {
+    0% {
+        transform: translateX(100%);
+    }
+    100% {
+        transform: translateX(-100%);
+    }
+}
+</style>

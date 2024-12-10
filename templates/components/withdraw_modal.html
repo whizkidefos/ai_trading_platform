@@ -1,0 +1,76 @@
+<!-- Withdraw Modal -->
+<div class="modal fade" id="withdrawModal" tabindex="-1" aria-labelledby="withdrawModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="withdrawModalLabel">Withdraw Funds</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="withdrawForm" action="{% url 'trading:process_withdrawal' %}" method="post">
+                    <div class="mb-3">
+                        <label for="withdrawAmount" class="form-label">Amount ($)</label>
+                        <input type="number" class="form-control bg-dark text-light border-secondary" id="withdrawAmount" min="10" step="1" required>
+                        <div class="form-text text-light">Minimum withdrawal: $10</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="withdrawMethod" class="form-label">Withdrawal Method</label>
+                        <select class="form-select bg-dark text-light border-secondary" id="withdrawMethod" required>
+                            <option value="">Select withdrawal method</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="crypto">Cryptocurrency</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="withdrawAddress" class="form-label">Withdrawal Address</label>
+                        <input type="text" class="form-control bg-dark text-light border-secondary" id="withdrawAddress" required>
+                        <div class="form-text text-light" id="withdrawAddressHelp">
+                            Enter your PayPal email, bank account, or crypto wallet address.
+                        </div>
+                    </div>
+                    <div id="paypalWithdrawInfo" class="alert alert-info bg-dark text-info border-info" style="display: none;">
+                        <i class="fab fa-paypal"></i> Your withdrawal will be processed via PayPal.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" form="withdrawForm">Withdraw</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('withdrawMethod').addEventListener('change', function() {
+    const paypalInfo = document.getElementById('paypalWithdrawInfo');
+    const addressHelp = document.getElementById('withdrawAddressHelp');
+    const addressInput = document.getElementById('withdrawAddress');
+
+    paypalInfo.style.display = this.value === 'paypal' ? 'block' : 'none';
+
+    switch(this.value) {
+        case 'paypal':
+            addressHelp.textContent = 'Enter your PayPal email address';
+            addressInput.type = 'email';
+            break;
+        case 'bank_transfer':
+            addressHelp.textContent = 'Enter your bank account details';
+            addressInput.type = 'text';
+            break;
+        case 'crypto':
+            addressHelp.textContent = 'Enter your cryptocurrency wallet address';
+            addressInput.type = 'text';
+            break;
+        default:
+            addressHelp.textContent = 'Enter your withdrawal address';
+            addressInput.type = 'text';
+    }
+});
+
+document.getElementById('withdrawForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    handleWithdrawal();
+});
+</script>

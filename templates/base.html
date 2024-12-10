@@ -13,6 +13,20 @@
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Core JavaScript Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment"></script>
+    <script src="https://kit.fontawesome.com/2c36e9b7b1.js" crossorigin="anonymous"></script>
+    
+    <!-- Custom JavaScript -->
+    {% block extra_js_head %}{% endblock %}
+    
+    {% block extra_css %}{% endblock %}
+    
     <style>
         :root {
             --dark-bg: #0a0c1b;
@@ -65,42 +79,81 @@
             outline: none;
         }
         
+        /* Dark theme for cards and components */
         .card {
-            background-color: var(--dark-card);
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            background-color: var(--dark-card) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        }
+
+        .dashboard-card {
+            background-color: var(--dark-card) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
         }
         
+        .form-control, .form-select {
+            background-color: var(--dark-bg) !important;
+            border-color: rgba(255, 255, 255, 0.1) !important;
+            color: var(--text-primary) !important;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            background-color: var(--dark-bg) !important;
+            border-color: var(--accent-color) !important;
+            box-shadow: 0 0 0 0.25rem rgba(79, 70, 229, 0.25) !important;
+        }
+        
+        .modal-content {
+            background-color: var(--dark-card) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        .modal-header, .modal-footer {
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        .alert-dark {
+            background-color: var(--dark-bg) !important;
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        /* Custom switch styling */
+        .form-switch .form-check-input {
+            background-color: var(--dark-bg) !important;
+            border-color: rgba(255, 255, 255, 0.25) !important;
+        }
+        
+        .form-switch .form-check-input:checked {
+            background-color: var(--accent-color) !important;
+            border-color: var(--accent-color) !important;
+        }
+        
+        /* Table styling */
+        .table {
+            color: var(--text-primary) !important;
+        }
+        
+        .table td, .table th {
+            border-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        /* Button hover states */
         .btn-primary {
-            background-color: var(--accent-color);
-            border: none;
-            border-radius: 8px;
-            padding: 0.5rem 1.5rem;
-            transition: transform 0.2s ease;
+            background-color: var(--accent-color) !important;
+            border-color: var(--accent-color) !important;
         }
         
         .btn-primary:hover {
-            transform: translateY(-2px);
-            background-color: #4338ca;
+            opacity: 0.9;
         }
         
-        .auth-container {
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 3rem 1rem;
-        }
-        
-        .auth-card {
-            width: 100%;
-            max-width: 800px;
-            padding: 3rem;
-            margin: 2rem auto;
-            background-color: var(--bg-secondary);
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        /* Chart background */
+        canvas {
+            background-color: var(--dark-card) !important;
+            border-radius: 0.5rem;
+            padding: 1rem;
         }
         
         .chart-container {
@@ -158,48 +211,68 @@
             color: var(--text-primary);
         }
     </style>
-    
-    {% block extra_head %}{% endblock %}
 </head>
 <body>
-    {% if not request.resolver_match.url_name in 'login,register' %}
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-chart-line me-2"></i>Trading Platform
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'home' %}">
+                <i class="fas fa-chart-line me-2"></i>
+                AI Trading Platform
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'user_dashboard' %}">
-                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'paypal_deposit' %}">
-                            <i class="fab fa-paypal me-1"></i>Deposit
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{% url 'profile' %}">
-                            <i class="fas fa-user me-1"></i>Profile
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <form method="post" action="{% url 'logout' %}" class="nav-item" id="logout-form">
-                            {% csrf_token %}
-                            <button type="submit" class="nav-link bg-transparent border-0">
-                                <i class="fas fa-sign-out-alt me-1"></i>Logout
-                            </button>
-                        </form>
-                    </li>
+                    {% if user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'trading:user_dashboard' %}">
+                                <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'trading:profile' %}">
+                                <i class="fas fa-user me-1"></i> Profile
+                            </a>
+                        </li>
+                        {% if user.is_staff %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'trading:admin_dashboard' %}">
+                                <i class="fas fa-cog me-1"></i> Admin
+                            </a>
+                        </li>
+                        {% endif %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'logout' %}">
+                                <i class="fas fa-sign-out-alt me-1"></i> Logout
+                            </a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'login' %}">
+                                <i class="fas fa-sign-in-alt me-1"></i> Login
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'register' %}">
+                                <i class="fas fa-user-plus me-1"></i> Register
+                            </a>
+                        </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>
     </nav>
+
+    {% if messages %}
+    <div class="container mt-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
     {% endif %}
 
     <div class="content-wrapper {% if request.resolver_match.url_name in 'login,register' %}auth{% else %}dashboard{% endif %}">
@@ -208,12 +281,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/moment"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment"></script>
-    <script src="https://kit.fontawesome.com/your-font-awesome-kit.js" crossorigin="anonymous"></script>
-    
     <script>
         function togglePassword(buttonElement) {
             const input = buttonElement.previousElementSibling;

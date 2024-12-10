@@ -1,265 +1,591 @@
-// Asset Selection Chart
+// Global variables
 let updateTimeout;
+let stocksChart, performanceChart, priceChart;
+let isTrading = false;
+let currentAsset = 'AAPL'; // Default to AAPL if no form
+let currentAssets = ['AAPL']; // Default to AAPL if no form
+let isAutomatedTradingActive = false;
 
-function updateAssetInfo() {
-    const form = document.getElementById('asset-form');
-    const formData = new FormData(form);
-    
-    // Show loading state
-    document.getElementById('asset-price').textContent = 'Loading...';
-    document.getElementById('asset-volume').textContent = 'Loading...';
-    document.getElementById('trading-signal').textContent = 'Loading...';
-    document.getElementById('rsi-value').textContent = 'Loading...';
-    document.getElementById('macd-value').textContent = 'Loading...';
-    document.getElementById('sma5-value').textContent = 'Loading...';
-    document.getElementById('sma20-value').textContent = 'Loading...';
-    document.getElementById('last-update').textContent = 'Loading...';
+// Rate limiting variables for asset info
+let assetInfoRetryCount = 0;
+const MAX_RETRY_COUNT = 3;
+const RETRY_DELAY = 5000; // 5 seconds
 
-    fetch(form.action, {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRFToken': formData.get('csrfmiddlewaretoken')
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            console.error(data.error);
-            return;
-        }
-        
-        // Update asset information
-        document.getElementById('asset-price').textContent = `$${data.last_price.toFixed(2)}`;
-        document.getElementById('asset-volume').textContent = data.volume.toLocaleString();
-        
-        // Update trading signal with emoji and color
-        const signalElement = document.getElementById('trading-signal');
-        if (data.signal === 1) {
-            signalElement.textContent = '🔥 Strong Buy';
-            signalElement.className = 'text-success';
-        } else if (data.signal === -1) {
-            signalElement.textContent = '❄️ Strong Sell';
-            signalElement.className = 'text-danger';
-        } else {
-            signalElement.textContent = '⚪ Hold';
-            signalElement.className = 'text-warning';
-        }
-        
-        // Update technical indicators
-        document.getElementById('rsi-value').textContent = data.technical_indicators.rsi.toFixed(2);
-        document.getElementById('macd-value').textContent = data.technical_indicators.macd.toFixed(2);
-        document.getElementById('sma5-value').textContent = data.technical_indicators.sma5.toFixed(2);
-        document.getElementById('sma20-value').textContent = data.technical_indicators.sma20.toFixed(2);
-        
-        document.getElementById('last-update').textContent = data.timestamp;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
-}
-
-// Update on asset selection change with debounce
-document.getElementById('asset').addEventListener('change', function() {
-    clearTimeout(updateTimeout);
-    updateTimeout = setTimeout(updateAssetInfo, 300); // 300ms debounce
-});
-
-// Initial load with default asset (AAPL)
-document.addEventListener('DOMContentLoaded', updateAssetInfo);
-
-// Auto-refresh every 60 seconds
-setInterval(updateAssetInfo, 60000);
-
-// Initialize all charts
+// Initialize Charts
 function initializeCharts() {
-    // Price Chart
-    const priceCtx = document.getElementById('priceChart').getContext('2d');
-    window.priceChart = new Chart(priceCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Price',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                tension: 0.1,
-                fill: false
-            }]
-        },
-        options: {
-            responsive: true,
-            interaction: {
-                intersect: false,
-                mode: 'index'
-            },
-            scales: {
-                y: {
-                    beginAtZero: false
-                }
-            }
-        }
-    });
-
-    // Volume Chart
-    const volumeCtx = document.getElementById('volumeChart').getContext('2d');
-    window.volumeChart = new Chart(volumeCtx, {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Volume',
-                data: [],
-                backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                borderColor: 'rgb(54, 162, 235)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
-
-    // Technical Indicators Chart
-    const technicalCtx = document.getElementById('technicalChart').getContext('2d');
-    window.technicalChart = new Chart(technicalCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                {
-                    label: 'RSI',
+    console.log('Initializing charts...');
+    const stocksCtx = document.getElementById('stocksChart');
+    const performanceCtx = document.getElementById('performanceChart');
+    const priceCtx = document.getElementById('priceChart');
+    
+    if (stocksCtx) {
+        stocksChart = new Chart(stocksCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Stock Price',
                     data: [],
-                    borderColor: 'rgb(255, 99, 132)',
-                    tension: 0.1,
-                    yAxisID: 'rsi'
-                },
-                {
-                    label: 'MACD',
-                    data: [],
-                    borderColor: 'rgb(54, 162, 235)',
-                    tension: 0.1,
-                    yAxisID: 'macd'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            interaction: {
-                mode: 'index',
-                intersect: false
+                    borderColor: '#4f46e5',
+                    tension: 0.4
+                }]
             },
-            scales: {
-                rsi: {
-                    type: 'linear',
-                    position: 'left',
-                    min: 0,
-                    max: 100
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
                 },
-                macd: {
-                    type: 'linear',
-                    position: 'right',
-                    grid: {
-                        drawOnChartArea: false
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'minute'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ffffff'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ffffff'
+                        }
                     }
                 }
             }
-        }
-    });
-
-    // Profit/Loss Chart
-    const plCtx = document.getElementById('profitLossChart').getContext('2d');
-    window.profitLossChart = new Chart(plCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Profit/Loss',
-                data: [],
-                borderColor: 'rgb(75, 192, 192)',
-                backgroundColor: function(context) {
-                    const value = context.raw;
-                    return value >= 0 ? 'rgba(75, 192, 192, 0.2)' : 'rgba(255, 99, 132, 0.2)';
+        });
+    }
+    
+    if (performanceCtx) {
+        performanceChart = new Chart(performanceCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Account Performance',
+                    data: [],
+                    borderColor: '#10b981',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
                 },
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ffffff'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#ffffff'
+                        }
+                    }
                 }
             }
+        });
+    }
+    
+    if (priceCtx) {
+        priceChart = new Chart(priceCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Price',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: '#ffffff'
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#ffffff'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    },
+                    y: {
+                        ticks: {
+                            color: '#ffffff',
+                            callback: function(value) {
+                                return '$' + value.toFixed(2);
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Update Charts
+function updateCharts(data) {
+    if (stocksChart && data.price_history) {
+        stocksChart.data.labels = data.price_history.map(p => new Date(p.timestamp));
+        stocksChart.data.datasets[0].data = data.price_history.map(p => p.price);
+        stocksChart.update();
+    }
+    
+    if (performanceChart && data.performance_history) {
+        performanceChart.data.labels = data.performance_history.map(p => new Date(p.timestamp));
+        performanceChart.data.datasets[0].data = data.performance_history.map(p => p.value);
+        performanceChart.update();
+    }
+    
+    if (priceChart && data.price_history) {
+        console.log('Updating chart with new data:', data.price_history);
+        
+        const labels = data.price_history.map(item => {
+            const date = new Date(item.time);
+            return date.toLocaleTimeString();
+        });
+        
+        const prices = data.price_history.map(item => item.price);
+        
+        priceChart.data.labels = labels;
+        priceChart.data.datasets[0].data = prices;
+        priceChart.update();
+    }
+}
+
+// Get CSRF token from cookie
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
         }
+    }
+    return cookieValue;
+}
+
+// Update trading status and controls
+function updateTradingStatus() {
+    console.log('Updating trading status...');
+    fetch('/trading/api/v1/trading/status/')
+    .then(response => response.json())
+    .then(data => {
+        if (!data.error) {
+            // Update trading status display
+            const autoSwitch = document.getElementById('autoTradingSwitch');
+            if (autoSwitch) {
+                autoSwitch.checked = data.is_trading;
+            }
+            
+            // Update trading form visibility
+            const tradingForm = document.getElementById('tradingParametersForm');
+            if (tradingForm) {
+                tradingForm.style.display = data.is_trading ? 'block' : 'none';
+            }
+            
+            // Update trading status
+            const statusText = document.getElementById('statusText');
+            if (statusText) {
+                statusText.textContent = data.is_trading ? 'Active' : 'Inactive';
+                statusText.className = `badge ${data.is_trading ? 'bg-success' : 'bg-secondary'}`;
+            }
+            
+            // Update statistics
+            const activeTrades = document.getElementById('activeTrades');
+            if (activeTrades) {
+                activeTrades.textContent = data.active_trades;
+            }
+            
+            const totalProfit = document.getElementById('totalProfit');
+            if (totalProfit) {
+                totalProfit.textContent = `$${data.total_profit.toFixed(2)}`;
+            }
+            
+            const winRate = document.getElementById('winRate');
+            if (winRate) {
+                winRate.textContent = `${data.win_rate.toFixed(1)}%`;
+            }
+            
+            // Update last trade time
+            const lastUpdate = document.getElementById('lastUpdateTime');
+            if (lastUpdate && data.last_trade_time) {
+                const lastTradeDate = new Date(data.last_trade_time);
+                lastUpdate.textContent = lastTradeDate.toLocaleString();
+            }
+            
+            // Show trading status section
+            const tradingStatus = document.getElementById('tradingStatus');
+            if (tradingStatus) {
+                tradingStatus.style.display = 'block';
+            }
+        } else {
+            console.error('Error fetching trading status:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating trading status:', error);
     });
 }
 
-// Update charts with new data
-function updateCharts(data) {
-    const timestamp = new Date().toLocaleTimeString();
+// Event Listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const autoSwitch = document.getElementById('autoTradingSwitch');
+    const tradingForm = document.getElementById('tradingParametersForm');
+    const tradingStatus = document.getElementById('tradingStatus');
 
-    // Update Price Chart
-    if (data.price) {
-        priceChart.data.labels.push(timestamp);
-        priceChart.data.datasets[0].data.push(data.price);
-        if (priceChart.data.labels.length > 50) {
-            priceChart.data.labels.shift();
-            priceChart.data.datasets[0].data.shift();
-        }
-        priceChart.update();
+    // Track if trading is active
+    let isTrading = false;
+
+    if (autoSwitch) {
+        autoSwitch.addEventListener('change', function() {
+            if (this.checked) {
+                // Only show the form initially when switch is turned on
+                if (tradingForm) tradingForm.style.display = 'block';
+                if (tradingStatus) tradingStatus.style.display = 'block';
+            } else {
+                // When switch is turned off, stop trading and hide controls
+                stopTrading();
+                if (tradingForm) tradingForm.style.display = 'none';
+                if (tradingStatus) tradingStatus.style.display = 'none';
+                isTrading = false;
+            }
+        });
     }
 
-    // Update Volume Chart
-    if (data.volume) {
-        volumeChart.data.labels.push(timestamp);
-        volumeChart.data.datasets[0].data.push(data.volume);
-        if (volumeChart.data.labels.length > 20) {
-            volumeChart.data.labels.shift();
-            volumeChart.data.datasets[0].data.shift();
-        }
-        volumeChart.update();
+    // Handle trading parameters form submission
+    if (tradingForm) {
+        tradingForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!isTrading) {
+                // Start trading with the provided parameters
+                const success = await startTrading();
+                if (success) {
+                    isTrading = true;
+                } else {
+                    // If starting fails, reset the switch
+                    if (autoSwitch) autoSwitch.checked = false;
+                    if (tradingForm) tradingForm.style.display = 'none';
+                    if (tradingStatus) tradingStatus.style.display = 'none';
+                }
+            } else {
+                // Just update parameters if already trading
+                updateTradingParameters();
+            }
+        });
     }
 
-    // Update Technical Indicators Chart
-    if (data.technical) {
-        technicalChart.data.labels.push(timestamp);
-        technicalChart.data.datasets[0].data.push(data.technical.rsi);
-        technicalChart.data.datasets[1].data.push(data.technical.macd);
-        if (technicalChart.data.labels.length > 50) {
-            technicalChart.data.labels.shift();
-            technicalChart.data.datasets[0].data.shift();
-            technicalChart.data.datasets[1].data.shift();
-        }
-        technicalChart.update();
+    // Initial status update
+    updateTradingStatus();
+    
+    // Update status periodically
+    setInterval(updateTradingStatus, 30000); // Update every 30 seconds
+});
+
+// Start automated trading with parameters
+async function startTrading() {
+    const tradeAmount = document.getElementById('tradeAmount');
+    const minPrice = document.getElementById('minPrice');
+    const maxPrice = document.getElementById('maxPrice');
+    
+    // Validate trading parameters
+    if (!tradeAmount || !minPrice || !maxPrice) {
+        showNotification('Please set trading parameters first', 'error');
+        return false;
     }
 
-    // Update Profit/Loss Chart
-    if (data.profitLoss !== undefined) {
-        profitLossChart.data.labels.push(timestamp);
-        profitLossChart.data.datasets[0].data.push(data.profitLoss);
-        if (profitLossChart.data.labels.length > 50) {
-            profitLossChart.data.labels.shift();
-            profitLossChart.data.datasets[0].data.shift();
+    if (parseFloat(tradeAmount.value) <= 0) {
+        showNotification('Trade amount must be greater than 0', 'error');
+        return false;
+    }
+
+    if (parseFloat(minPrice.value) >= parseFloat(maxPrice.value)) {
+        showNotification('Minimum price must be less than maximum price', 'error');
+        return false;
+    }
+
+    try {
+        const response = await fetch('/trading/api/v1/trading/start/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                trade_amount: parseFloat(tradeAmount.value),
+                min_price: parseFloat(minPrice.value),
+                max_price: parseFloat(maxPrice.value)
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showNotification('Automated trading started successfully', 'success');
+            updateTradingStatus();
+            return true;
+        } else {
+            showNotification(data.message || 'Error starting automated trading', 'error');
+            return false;
         }
-        profitLossChart.update();
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error starting automated trading', 'error');
+        return false;
     }
 }
 
-// Initialize charts when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    initializeCharts();
-    updateAutomatedTradingStatus();
-});
+// Stop automated trading
+async function stopTrading() {
+    try {
+        const response = await fetch('/trading/api/v1/trading/stop/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
 
-// Update WebSocket message handler to update charts
-autoTradingSocket.onmessage = function(e) {
-    const data = JSON.parse(e.data);
-    handleAutoTradingUpdate(data);
-    updateCharts(data);
-};
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showNotification('Automated trading stopped successfully', 'success');
+            updateTradingStatus();
+        } else {
+            showNotification(data.message || 'Error stopping automated trading', 'error');
+            
+            // Reset switch if failed
+            const autoSwitch = document.getElementById('autoTradingSwitch');
+            if (autoSwitch) {
+                autoSwitch.checked = true;
+            }
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error stopping automated trading', 'error');
+        
+        // Reset switch on error
+        const autoSwitch = document.getElementById('autoTradingSwitch');
+        if (autoSwitch) {
+            autoSwitch.checked = true;
+        }
+    }
+}
+
+// Update trading parameters
+async function updateTradingParameters() {
+    const tradeAmount = document.getElementById('tradeAmount');
+    const minPrice = document.getElementById('minPrice');
+    const maxPrice = document.getElementById('maxPrice');
+    
+    if (!tradeAmount || !minPrice || !maxPrice) {
+        showNotification('Trading parameters form fields not found', 'error');
+        return;
+    }
+
+    // Validate input values
+    if (parseFloat(minPrice.value) >= parseFloat(maxPrice.value)) {
+        showNotification('Minimum price must be less than maximum price', 'error');
+        return;
+    }
+
+    if (parseFloat(tradeAmount.value) <= 0) {
+        showNotification('Trade amount must be greater than 0', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/trading/api/v1/trading/update-parameters/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                trade_amount: parseFloat(tradeAmount.value),
+                min_price: parseFloat(minPrice.value),
+                max_price: parseFloat(maxPrice.value)
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showNotification('Trading parameters updated successfully', 'success');
+            updateTradingStatus();
+        } else {
+            showNotification(data.message || 'Error updating trading parameters', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error updating trading parameters', 'error');
+    }
+}
+
+// Update trading statistics display
+function updateTradingStats(data) {
+    const activeTrades = document.getElementById('activeTrades');
+    if (activeTrades) {
+        activeTrades.textContent = data.active_trades;
+    }
+    
+    const totalProfit = document.getElementById('totalProfit');
+    if (totalProfit) {
+        totalProfit.textContent = '$' + data.total_profit.toFixed(2);
+        totalProfit.className = data.total_profit >= 0 ? 'text-success' : 'text-danger';
+    }
+    
+    const winRate = document.getElementById('winRate');
+    if (winRate) {
+        winRate.textContent = data.win_rate.toFixed(1) + '%';
+    }
+    
+    const lastTrade = document.getElementById('lastTrade');
+    if (lastTrade && data.last_trade_time) {
+        const date = new Date(data.last_trade_time);
+        lastTrade.textContent = date.toLocaleString();
+    }
+}
+
+// Notification helper
+function showNotification(message, type) {
+    console.log('Showing notification:', message, type);
+    const notification = document.getElementById('notification');
+    if (notification) {
+        notification.className = `alert alert-${type}`;
+        notification.textContent = message;
+        notification.style.display = 'block';
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 5000);
+    }
+}
+
+// Deposit handling
+async function handleDeposit(event) {
+    event.preventDefault();
+    console.log('Handling deposit...');
+
+    const form = document.getElementById('depositForm');
+    const amount = document.getElementById('depositAmount').value;
+    const method = document.getElementById('depositMethod').value;
+
+    try {
+        const response = await fetch('/trading/deposit/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                amount: amount,
+                method: method
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('Deposit initiated successfully!', 'success');
+            $('#depositModal').modal('hide');
+            form.reset();
+            
+            // If PayPal, redirect to PayPal
+            if (method === 'paypal' && data.redirect_url) {
+                window.location.href = data.redirect_url;
+            }
+        } else {
+            showNotification(data.error || 'Failed to process deposit', 'error');
+        }
+    } catch (error) {
+        console.error('Deposit error:', error);
+        showNotification('Error processing deposit', 'error');
+    }
+}
+
+// Withdrawal handling
+async function handleWithdrawal(event) {
+    event.preventDefault();
+    console.log('Handling withdrawal...');
+
+    const form = document.getElementById('withdrawForm');
+    const amount = document.getElementById('withdrawAmount').value;
+    const method = document.getElementById('withdrawMethod').value;
+    const address = document.getElementById('withdrawAddress').value;
+
+    try {
+        const response = await fetch('/trading/withdraw/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                amount: amount,
+                method: method,
+                address: address
+            })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('Withdrawal request submitted successfully!', 'success');
+            $('#withdrawModal').modal('hide');
+            form.reset();
+        } else {
+            showNotification(data.error || 'Failed to process withdrawal', 'error');
+        }
+    } catch (error) {
+        console.error('Withdrawal error:', error);
+        showNotification('Error processing withdrawal', 'error');
+    }
+}
