@@ -212,178 +212,113 @@ function getCookie(name) {
     return cookieValue;
 }
 
-// Update trading status and controls
-function updateTradingStatus() {
-    console.log('Updating trading status...');
-    fetch('/trading/api/v1/trading/status/')
-    .then(response => response.json())
-    .then(data => {
-        if (!data.error) {
-            // Update trading status display
-            const autoSwitch = document.getElementById('autoTradingSwitch');
-            if (autoSwitch) {
-                autoSwitch.checked = data.is_trading;
-            }
-            
-            // Update trading form visibility
-            const tradingForm = document.getElementById('tradingParametersForm');
-            if (tradingForm) {
-                tradingForm.style.display = data.is_trading ? 'block' : 'none';
-            }
-            
-            // Update trading status
-            const statusText = document.getElementById('statusText');
-            if (statusText) {
-                statusText.textContent = data.is_trading ? 'Active' : 'Inactive';
-                statusText.className = `badge ${data.is_trading ? 'bg-success' : 'bg-secondary'}`;
-            }
-            
-            // Update statistics
-            const activeTrades = document.getElementById('activeTrades');
-            if (activeTrades) {
-                activeTrades.textContent = data.active_trades;
-            }
-            
-            const totalProfit = document.getElementById('totalProfit');
-            if (totalProfit) {
-                totalProfit.textContent = `$${data.total_profit.toFixed(2)}`;
-            }
-            
-            const winRate = document.getElementById('winRate');
-            if (winRate) {
-                winRate.textContent = `${data.win_rate.toFixed(1)}%`;
-            }
-            
-            // Update last trade time
-            const lastUpdate = document.getElementById('lastUpdateTime');
-            if (lastUpdate && data.last_trade_time) {
-                const lastTradeDate = new Date(data.last_trade_time);
-                lastUpdate.textContent = lastTradeDate.toLocaleString();
-            }
-            
-            // Show trading status section
-            const tradingStatus = document.getElementById('tradingStatus');
-            if (tradingStatus) {
-                tradingStatus.style.display = 'block';
-            }
-        } else {
-            console.error('Error fetching trading status:', data.error);
+// Function to update trading status
+async function updateTradingStatus() {
+    try {
+        const response = await fetch('/trading/api/v1/trading/status/');
+        if (!response.ok) {
+            throw new Error('Failed to fetch trading status');
         }
-    })
-    .catch(error => {
+        
+        const data = await response.json();
+        console.log('Trading status data:', data);
+        
+        // Update switch state
+        const autoSwitch = document.getElementById('autoTradingSwitch');
+        if (autoSwitch) {
+            autoSwitch.checked = data.is_trading;
+            isAutomatedTradingActive = data.is_trading;
+        }
+        
+        // Update form visibility
+        const tradingForm = document.getElementById('tradingParametersForm');
+        if (tradingForm) {
+            tradingForm.style.display = data.is_trading ? 'block' : 'none';
+        }
+        
+        // Update metrics
+        document.getElementById('activeTrades').textContent = data.active_trades;
+        document.getElementById('totalProfit').textContent = data.total_profit.toFixed(2);
+        document.getElementById('winRate').textContent = data.win_rate.toFixed(1);
+        
+        // Update last trade info if available
+        if (data.last_trade) {
+            document.getElementById('lastTradeType').textContent = data.last_trade.type;
+            document.getElementById('lastTradeAmount').textContent = data.last_trade.amount;
+            document.getElementById('lastTradePrice').textContent = data.last_trade.price;
+            document.getElementById('lastTradeTime').textContent = new Date(data.last_trade.time).toLocaleString();
+        }
+        
+        // Show/hide stop button
+        const stopButtonContainer = document.getElementById('stopButtonContainer');
+        if (stopButtonContainer) {
+            if (data.is_trading && !document.getElementById('stopTradingBtn')) {
+                const stopButton = document.createElement('button');
+                stopButton.id = 'stopTradingBtn';
+                stopButton.className = 'btn btn-danger mt-3';
+                stopButton.textContent = 'Stop Trading';
+                stopButton.onclick = stopTrading;
+                stopButtonContainer.appendChild(stopButton);
+            } else if (!data.is_trading) {
+                stopButtonContainer.innerHTML = '';
+            }
+        }
+    } catch (error) {
         console.error('Error updating trading status:', error);
-    });
+        showNotification('Failed to update trading status', 'error');
+    }
 }
 
-// Event Listeners
-document.addEventListener('DOMContentLoaded', function() {
-    const autoSwitch = document.getElementById('autoTradingSwitch');
-    const tradingForm = document.getElementById('tradingParametersForm');
-    const tradingStatus = document.getElementById('tradingStatus');
-
-    // Track if trading is active
-    let isTrading = false;
-
-    if (autoSwitch) {
-        autoSwitch.addEventListener('change', function() {
-            if (this.checked) {
-                // Only show the form initially when switch is turned on
-                if (tradingForm) tradingForm.style.display = 'block';
-                if (tradingStatus) tradingStatus.style.display = 'block';
-            } else {
-                // When switch is turned off, stop trading and hide controls
-                stopTrading();
-                if (tradingForm) tradingForm.style.display = 'none';
-                if (tradingStatus) tradingStatus.style.display = 'none';
-                isTrading = false;
-            }
-        });
-    }
-
-    // Handle trading parameters form submission
-    if (tradingForm) {
-        tradingForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            if (!isTrading) {
-                // Start trading with the provided parameters
-                const success = await startTrading();
-                if (success) {
-                    isTrading = true;
-                } else {
-                    // If starting fails, reset the switch
-                    if (autoSwitch) autoSwitch.checked = false;
-                    if (tradingForm) tradingForm.style.display = 'none';
-                    if (tradingStatus) tradingStatus.style.display = 'none';
-                }
-            } else {
-                // Just update parameters if already trading
-                updateTradingParameters();
-            }
-        });
-    }
-
-    // Initial status update
-    updateTradingStatus();
-    
-    // Update status periodically
-    setInterval(updateTradingStatus, 30000); // Update every 30 seconds
-});
-
-// Start automated trading with parameters
+// Function to start trading
 async function startTrading() {
-    const tradeAmount = document.getElementById('tradeAmount');
-    const minPrice = document.getElementById('minPrice');
-    const maxPrice = document.getElementById('maxPrice');
-    
-    // Validate trading parameters
-    if (!tradeAmount || !minPrice || !maxPrice) {
-        showNotification('Please set trading parameters first', 'error');
-        return false;
-    }
-
-    if (parseFloat(tradeAmount.value) <= 0) {
-        showNotification('Trade amount must be greater than 0', 'error');
-        return false;
-    }
-
-    if (parseFloat(minPrice.value) >= parseFloat(maxPrice.value)) {
-        showNotification('Minimum price must be less than maximum price', 'error');
-        return false;
-    }
-
     try {
-        const response = await fetch('/trading/api/v1/trading/start/', {
+        const tradeAmount = document.getElementById('tradeAmount').value;
+        const minPrice = document.getElementById('minPrice').value;
+        const maxPrice = document.getElementById('maxPrice').value;
+
+        // First update the parameters
+        const paramsResponse = await fetch('/trading/api/v1/trading/update-parameters/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCookie('csrftoken')
             },
             body: JSON.stringify({
-                trade_amount: parseFloat(tradeAmount.value),
-                min_price: parseFloat(minPrice.value),
-                max_price: parseFloat(maxPrice.value)
+                trade_amount: tradeAmount,
+                min_price: minPrice,
+                max_price: maxPrice
             })
         });
 
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-            showNotification('Automated trading started successfully', 'success');
-            updateTradingStatus();
-            return true;
-        } else {
-            showNotification(data.message || 'Error starting automated trading', 'error');
-            return false;
+        if (!paramsResponse.ok) {
+            throw new Error('Failed to update trading parameters');
         }
+
+        // Then start trading
+        const startResponse = await fetch('/trading/api/v1/trading/start/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+
+        if (!startResponse.ok) {
+            throw new Error('Failed to start trading');
+        }
+
+        showNotification('Trading started successfully', 'success');
+        isAutomatedTradingActive = true;
+        updateTradingStatus();
+        return true;
     } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error starting automated trading', 'error');
+        console.error('Error starting trading:', error);
+        showNotification('Failed to start trading: ' + error.message, 'error');
         return false;
     }
 }
 
-// Stop automated trading
+// Function to stop trading
 async function stopTrading() {
     try {
         const response = await fetch('/trading/api/v1/trading/stop/', {
@@ -394,198 +329,103 @@ async function stopTrading() {
             }
         });
 
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-            showNotification('Automated trading stopped successfully', 'success');
-            updateTradingStatus();
-        } else {
-            showNotification(data.message || 'Error stopping automated trading', 'error');
-            
-            // Reset switch if failed
-            const autoSwitch = document.getElementById('autoTradingSwitch');
-            if (autoSwitch) {
-                autoSwitch.checked = true;
-            }
+        if (!response.ok) {
+            throw new Error('Failed to stop trading');
         }
-    } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error stopping automated trading', 'error');
+
+        showNotification('Trading stopped successfully', 'success');
+        isAutomatedTradingActive = false;
         
-        // Reset switch on error
+        // Update UI
         const autoSwitch = document.getElementById('autoTradingSwitch');
-        if (autoSwitch) {
-            autoSwitch.checked = true;
-        }
-    }
-}
-
-// Update trading parameters
-async function updateTradingParameters() {
-    const tradeAmount = document.getElementById('tradeAmount');
-    const minPrice = document.getElementById('minPrice');
-    const maxPrice = document.getElementById('maxPrice');
-    
-    if (!tradeAmount || !minPrice || !maxPrice) {
-        showNotification('Trading parameters form fields not found', 'error');
-        return;
-    }
-
-    // Validate input values
-    if (parseFloat(minPrice.value) >= parseFloat(maxPrice.value)) {
-        showNotification('Minimum price must be less than maximum price', 'error');
-        return;
-    }
-
-    if (parseFloat(tradeAmount.value) <= 0) {
-        showNotification('Trade amount must be greater than 0', 'error');
-        return;
-    }
-    
-    try {
-        const response = await fetch('/trading/api/v1/trading/update-parameters/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            },
-            body: JSON.stringify({
-                trade_amount: parseFloat(tradeAmount.value),
-                min_price: parseFloat(minPrice.value),
-                max_price: parseFloat(maxPrice.value)
-            })
-        });
-
-        const data = await response.json();
+        const tradingForm = document.getElementById('tradingParametersForm');
+        const stopButtonContainer = document.getElementById('stopButtonContainer');
         
-        if (data.status === 'success') {
-            showNotification('Trading parameters updated successfully', 'success');
-            updateTradingStatus();
-        } else {
-            showNotification(data.message || 'Error updating trading parameters', 'error');
-        }
+        if (autoSwitch) autoSwitch.checked = false;
+        if (tradingForm) tradingForm.style.display = 'none';
+        if (stopButtonContainer) stopButtonContainer.innerHTML = '';
+        
+        updateTradingStatus();
     } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error updating trading parameters', 'error');
+        console.error('Error stopping trading:', error);
+        showNotification('Failed to stop trading: ' + error.message, 'error');
     }
 }
 
-// Update trading statistics display
-function updateTradingStats(data) {
-    const activeTrades = document.getElementById('activeTrades');
-    if (activeTrades) {
-        activeTrades.textContent = data.active_trades;
-    }
+// Function to show notifications
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+    notification.style.zIndex = '1050';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    document.body.appendChild(notification);
     
-    const totalProfit = document.getElementById('totalProfit');
-    if (totalProfit) {
-        totalProfit.textContent = '$' + data.total_profit.toFixed(2);
-        totalProfit.className = data.total_profit >= 0 ? 'text-success' : 'text-danger';
-    }
-    
-    const winRate = document.getElementById('winRate');
-    if (winRate) {
-        winRate.textContent = data.win_rate.toFixed(1) + '%';
-    }
-    
-    const lastTrade = document.getElementById('lastTrade');
-    if (lastTrade && data.last_trade_time) {
-        const date = new Date(data.last_trade_time);
-        lastTrade.textContent = date.toLocaleString();
-    }
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
 }
 
-// Notification helper
-function showNotification(message, type) {
-    console.log('Showing notification:', message, type);
-    const notification = document.getElementById('notification');
-    if (notification) {
-        notification.className = `alert alert-${type}`;
-        notification.textContent = message;
-        notification.style.display = 'block';
-        setTimeout(() => {
-            notification.style.display = 'none';
-        }, 5000);
-    }
-}
+// Event Listeners
+document.addEventListener('DOMContentLoaded', function() {
+    const autoSwitch = document.getElementById('autoTradingSwitch');
+    const tradingForm = document.getElementById('tradingParametersForm');
+    const tradingParamsForm = document.getElementById('tradingForm');
 
-// Deposit handling
-async function handleDeposit(event) {
-    event.preventDefault();
-    console.log('Handling deposit...');
-
-    const form = document.getElementById('depositForm');
-    const amount = document.getElementById('depositAmount').value;
-    const method = document.getElementById('depositMethod').value;
-
-    try {
-        const response = await fetch('/trading/deposit/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            },
-            body: JSON.stringify({
-                amount: amount,
-                method: method
-            })
-        });
-
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification('Deposit initiated successfully!', 'success');
-            $('#depositModal').modal('hide');
-            form.reset();
-            
-            // If PayPal, redirect to PayPal
-            if (method === 'paypal' && data.redirect_url) {
-                window.location.href = data.redirect_url;
+    if (autoSwitch) {
+        autoSwitch.addEventListener('change', function() {
+            if (this.checked) {
+                if (tradingForm) tradingForm.style.display = 'block';
+            } else {
+                stopTrading();
             }
-        } else {
-            showNotification(data.error || 'Failed to process deposit', 'error');
-        }
-    } catch (error) {
-        console.error('Deposit error:', error);
-        showNotification('Error processing deposit', 'error');
-    }
-}
-
-// Withdrawal handling
-async function handleWithdrawal(event) {
-    event.preventDefault();
-    console.log('Handling withdrawal...');
-
-    const form = document.getElementById('withdrawForm');
-    const amount = document.getElementById('withdrawAmount').value;
-    const method = document.getElementById('withdrawMethod').value;
-    const address = document.getElementById('withdrawAddress').value;
-
-    try {
-        const response = await fetch('/trading/withdraw/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            },
-            body: JSON.stringify({
-                amount: amount,
-                method: method,
-                address: address
-            })
         });
-
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification('Withdrawal request submitted successfully!', 'success');
-            $('#withdrawModal').modal('hide');
-            form.reset();
-        } else {
-            showNotification(data.error || 'Failed to process withdrawal', 'error');
-        }
-    } catch (error) {
-        console.error('Withdrawal error:', error);
-        showNotification('Error processing withdrawal', 'error');
     }
-}
+
+    if (tradingParamsForm) {
+        tradingParamsForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!isAutomatedTradingActive) {
+                await startTrading();
+            } else {
+                const tradeAmount = document.getElementById('tradeAmount').value;
+                const minPrice = document.getElementById('minPrice').value;
+                const maxPrice = document.getElementById('maxPrice').value;
+
+                try {
+                    const response = await fetch('/trading/api/v1/trading/update-parameters/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': getCookie('csrftoken')
+                        },
+                        body: JSON.stringify({
+                            trade_amount: tradeAmount,
+                            min_price: minPrice,
+                            max_price: maxPrice
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to update parameters');
+                    }
+
+                    showNotification('Trading parameters updated successfully', 'success');
+                } catch (error) {
+                    console.error('Error updating parameters:', error);
+                    showNotification('Failed to update parameters: ' + error.message, 'error');
+                }
+            }
+        });
+    }
+
+    // Initial status update
+    updateTradingStatus();
+    
+    // Update status periodically
+    setInterval(updateTradingStatus, 5000); // Update every 5 seconds
+});

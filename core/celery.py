@@ -14,19 +14,23 @@ app.autodiscover_tasks()
 
 
 app.conf.beat_schedule = {
-    'execute_trade_every_hour': {
+    'execute_trades': {
         'task': 'trading.tasks.execute_trade_task',
-        'schedule': crontab(minute=0, hour='*'),  # Runs every hour
+        'schedule': 60.0,  # Run every 60 seconds
     },
 }
 
 
 def notify_trade_update(message):
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        'trade_updates',
-        {
-            'type': 'trade_update',
-            'message': message
-        }
-    )
+    """Send trade update notifications via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            'trade_updates',
+            {
+                'type': 'trade_update',
+                'message': message
+            }
+        )
+    except Exception as e:
+        print(f"Error sending trade notification: {str(e)}")

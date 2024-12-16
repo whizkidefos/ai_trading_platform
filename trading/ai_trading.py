@@ -76,12 +76,29 @@ def train_model(data):
 
 # Get the most recent market data and make a trade decision
 def make_trade_prediction(model, data):
+    """Make a trade prediction with confidence score.
+    
+    Args:
+        model: Trained RandomForestClassifier model
+        data: Market data DataFrame
+        
+    Returns:
+        dict: Contains prediction ('buy' or 'sell') and confidence score
+    """
     data = add_technical_indicators(data)
     recent_data = data[['SMA_5', 'EMA_10', 'RSI']].tail(1)
     
-    prediction = model.predict(recent_data)
-
-    return 'buy' if prediction == 1 else 'sell'
+    # Get prediction probabilities
+    pred_proba = model.predict_proba(recent_data)[0]
+    prediction = model.predict(recent_data)[0]
+    
+    # Get confidence (probability of predicted class)
+    confidence = pred_proba[prediction]
+    
+    return {
+        'action': 'buy' if prediction == 1 else 'sell',
+        'confidence': float(confidence)
+    }
 
 
 # Fetch market data from Alpha Vantage

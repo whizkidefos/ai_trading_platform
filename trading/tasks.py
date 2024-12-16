@@ -1,71 +1,73 @@
 from celery import shared_task
 from .ai_trading import train_model, make_trade_prediction, get_market_data
 from .models import UserProfile, Trade, AccountBalance
+from decimal import Decimal
+from core.celery import notify_trade_update
 import logging
 
 logger = logging.getLogger('trading')
 
-
-@shared_task
-def automated_trading():
-    symbol = 'AAPL'
-    data = get_market_data(symbol)
-    data = apply_trading_strategy(data)
-
-    # Fetch latest signal
-    latest_signal = data['Signal'].iloc[-1]
-
-    if latest_signal == 1:  # Buy
-        execute_trade(symbol, 'buy', 100)  # Example: Buy $100 worth
-    elif latest_signal == -1:  # Sell
-        execute_trade(symbol, 'sell', 100)  # Example: Sell $100 worth
-
-    return "Trade executed"
-
 @shared_task
 def execute_trade_task():
-    # Example: Execute trades for all users (you can adjust based on your needs)
-    users = UserProfile.objects.all()
-    
-    for user in users:
-        # Fetch market data for a specific asset
-        market_data = get_market_data('AAPL')
+    """Execute trades for users with automated trading enabled"""
+    try:
+        # Only get users with automated trading enabled
+        users = UserProfile.objects.filter(automated_trading_enabled=True)
+        logger.info(f"Found {users.count()} users with automated trading enabled")
+        
+        for user in users:
+            try:
+                # Check if user has sufficient balance
+                balance = AccountBalance.objects.get(user=user.user)
+                if balance.balance_usd < user.trade_amount:
+                    logger.warning(f"Insufficient balance for user {user.user.username}")
+                    continue
 
-        # Train the AI model and make a trade prediction
-        model = train_model(market_data)
-        trade_action = make_trade_prediction(model, market_data)
+                # Fetch market data
+                market_data = get_market_data('AAPL')
+                current_price = Decimal(str(market_data['Close'].iloc[-1]))
+                
+                # Check if price is within user's parameters
+                if current_price < user.min_price or current_price > user.max_price:
+                    logger.info(f"Price {current_price} outside range [{user.min_price}-{user.max_price}] for user {user.user.username}")
+                    continue
 
-        # Execute the trade based on the AI prediction
-        if trade_action == 'buy':
-            amount = 100  # Example trade amount
-            new_trade = Trade(user=user, asset='AAPL', trade_type='buy', amount=amount, profit_or_loss=0.0)
-            new_trade.save()
+                # Train model and get prediction
+                model = train_model(market_data)
+                trade_action = make_trade_prediction(model, market_data)
+                
+                # Execute trade based on prediction
+                if trade_action in ['buy', 'sell']:
+                    # Create trade record
+                    new_trade = Trade.objects.create(
+                        user_profile=user,
+                        trade_type=trade_action,
+                        amount=user.trade_amount,
+                        entry_price=current_price,
+                        status='active'
+                    )
+                    
+                    # Update balance
+                    if trade_action == 'buy':
+                        balance.balance_usd -= user.trade_amount
+                    else:  # sell
+                        balance.balance_usd += user.trade_amount
+                    
+                    balance.save()
+                    
+                    # Send notification using core function
+                    notify_trade_update(
+                        f'{user.user.username} executed a {trade_action} trade of ${user.trade_amount}!'
+                    )
+                    
+                    logger.info(f"Executed {trade_action} trade for user {user.user.username} amount: ${user.trade_amount}")
 
-            # Deduct from balance
-            balance = AccountBalance.objects.get(user=user)
-            balance.balance_usd -= amount
-            balance.save()
+            except Exception as e:
+                logger.error(f"Error executing trade for user {user.user.username}: {str(e)}")
+                continue
 
-        elif trade_action == 'sell':
-            new_trade = Trade(user=user, asset='AAPL', trade_type='sell', amount=0, profit_or_loss=10.0)
-            new_trade.save()
-
-            # Add to balance
-            balance = AccountBalance.objects.get(user=user)
-            balance.balance_usd += 10.0
-            balance.save()
+    except Exception as e:
+        logger.error(f"Error in execute_trade_task: {str(e)}")
+        raise
 
     return "Trade execution completed"
-
-
-# Helper function to send WebSocket notifications
-def send_trade_notification(username, trade_action, amount):
-    channel_layer = get_channel_layer()
-
-    async_to_sync(channel_layer.group_send)(
-        'trade_notifications',  # Group name
-        {
-            'type': 'trade_update',  # Custom event name
-            'message': f'{username} executed a {trade_action} trade of ${amount}!'
-        }
-    )

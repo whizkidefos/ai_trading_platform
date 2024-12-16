@@ -1,0 +1,60 @@
+<!-- Trading Metrics Component -->
+<div class="card bg-dark text-light mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Trading Metrics</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <div class="metric-card bg-dark-secondary p-3 rounded">
+                    <h6 class="text-muted">Active Trades</h6>
+                    <p id="activeTrades" class="h3 mb-0">0</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card bg-dark-secondary p-3 rounded">
+                    <h6 class="text-muted">Total Profit</h6>
+                    <p class="h3 mb-0">$<span id="totalProfit">0.00</span></p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card bg-dark-secondary p-3 rounded">
+                    <h6 class="text-muted">Win Rate</h6>
+                    <p class="h3 mb-0"><span id="winRate">0.0</span>%</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-4">
+            <h5 class="mb-3">Last Trade</h5>
+            <div class="bg-dark-secondary p-3 rounded">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-2">
+                            <span class="text-muted">Type:</span><br>
+                            <span id="lastTradeType" class="h5">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-2">
+                            <span class="text-muted">Amount:</span><br>
+                            $<span id="lastTradeAmount" class="h5">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-2">
+                            <span class="text-muted">Price:</span><br>
+                            $<span id="lastTradePrice" class="h5">-</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-2">
+                            <span class="text-muted">Time:</span><br>
+                            <span id="lastTradeTime" class="h5">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

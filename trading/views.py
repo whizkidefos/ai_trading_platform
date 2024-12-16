@@ -219,7 +219,7 @@ def start_automated_trading(request):
             }, status=400)
 
         # Set trading status to active
-        user_profile.is_trading_active = True
+        user_profile.automated_trading_enabled = True
         user_profile.save()
 
         # Start the automated trading task
@@ -245,7 +245,7 @@ def stop_automated_trading(request):
         user_profile = request.user.userprofile
         
         # Set trading status to inactive
-        user_profile.is_trading_active = False
+        user_profile.automated_trading_enabled = False
         user_profile.save()
 
         # Stop the automated trading task
@@ -291,7 +291,7 @@ def get_trading_status(request):
         
         return JsonResponse({
             'status': 'success',
-            'is_trading_active': user_profile.is_trading_active,
+            'is_trading_active': user_profile.automated_trading_enabled,
             'trades_today': trades_today,
             'profit_today': round(profit_percentage, 2),
             'active_positions': active_positions,
@@ -1444,7 +1444,7 @@ def upload_kyc_documents(request):
 def start_trading(request):
     try:
         user_profile = request.user.userprofile
-        user_profile.is_trading = True
+        user_profile.automated_trading_enabled = True
         user_profile.save()
         
         return JsonResponse({
@@ -1462,7 +1462,7 @@ def start_trading(request):
 def stop_trading(request):
     try:
         user_profile = request.user.userprofile
-        user_profile.is_trading = False
+        user_profile.automated_trading_enabled = False
         user_profile.save()
         
         return JsonResponse({
@@ -1486,6 +1486,7 @@ def update_trading_parameters(request):
         user_profile.trade_amount = Decimal(data.get('trade_amount', 0))
         user_profile.min_price = Decimal(data.get('min_price', 0))
         user_profile.max_price = Decimal(data.get('max_price', 0))
+        user_profile.automated_trading_enabled = True  # Enable trading when parameters are updated
         user_profile.save()
         
         return JsonResponse({
@@ -1501,7 +1502,6 @@ def update_trading_parameters(request):
 @login_required
 def trading_status(request):
     try:
-        # Get user profile
         user_profile = request.user.userprofile
         
         # Get active trades count
@@ -1531,7 +1531,7 @@ def trading_status(request):
         ).order_by('-timestamp').first()
         
         status_data = {
-            'is_trading': user_profile.automated_trading_enabled,
+            'is_trading': user_profile.automated_trading_enabled,  # Match the field name expected by frontend
             'active_trades': active_trades,
             'total_profit': float(total_profit),
             'win_rate': win_rate,

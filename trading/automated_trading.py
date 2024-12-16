@@ -10,7 +10,7 @@ from alpaca_trade_api.rest import TimeFrame
 
 from .models import Trade, AccountBalance, UserProfile
 from .alpaca_client import AlpacaClient
-from .ai_trading import make_trade_prediction
+from .ai_trading import make_trade_prediction, train_model
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ class AutomatedTrading:
         self.is_running = False
         self.trading_thread = None
         self.alpaca = AlpacaClient()
+        self.model = None  # Will store trained model
         self.max_position_size = Decimal('1000.00')  # Maximum position size in USD
         self.risk_per_trade = Decimal('0.01')  # 1% risk per trade
         self.stop_loss_percent = Decimal('0.02')  # 2% stop loss
@@ -28,12 +29,30 @@ class AutomatedTrading:
     def start(self):
         """Start automated trading"""
         if self.is_running:
-            return
-        
-        self.is_running = True
-        self.trading_thread = threading.Thread(target=self._trading_loop)
-        self.trading_thread.daemon = True
-        self.trading_thread.start()
+            return False
+
+        # Get initial data and train model
+        try:
+            # Get historical data for training
+            training_data = self.alpaca.get_bars(
+                'SPY',  # Use SPY (S&P 500 ETF) for training
+                TimeFrame.Hour,
+                limit=1000  # Get more historical data for training
+            )
+            
+            # Train the model
+            self.model = train_model(training_data)
+            logger.info("Successfully trained trading model")
+            
+            self.is_running = True
+            self.trading_thread = threading.Thread(target=self._trading_loop)
+            self.trading_thread.daemon = True
+            self.trading_thread.start()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start automated trading: {str(e)}")
+            return False
 
     def stop(self):
         """Stop automated trading"""
@@ -181,13 +200,16 @@ class AutomatedTrading:
                         limit=100
                     )
                     
-                    # Make prediction
-                    prediction = make_trade_prediction(bars)
-                    
-                    if prediction['confidence'] >= 0.7:  # Only trade with high confidence
-                        trade_result = self._execute_trade(symbol, prediction)
-                        if trade_result:
-                            logger.info(f"Executed trade: {trade_result}")
+                    # Make prediction using trained model
+                    if self.model is not None:
+                        prediction = make_trade_prediction(self.model, bars)
+                        
+                        if prediction['confidence'] >= 0.7:  # Only trade with high confidence
+                            trade_result = self._execute_trade(symbol, prediction)
+                            if trade_result:
+                                logger.info(f"Executed trade: {trade_result}")
+                    else:
+                        logger.warning("No trained model available")
 
                 # Sleep for a minute before next iteration
                 time.sleep(60)

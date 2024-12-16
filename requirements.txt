@@ -12,10 +12,11 @@ beautifulsoup4==4.12.3
 billiard==4.2.1
 cairocffi==1.7.1
 CairoSVG==2.7.1
-celery==5.4.0
+celery==5.3.6
 certifi==2024.8.30
 cffi==1.17.1
-channels==4.1.0
+channels==4.0.0
+channels_redis==4.1.0
 channels_redis==4.2.1
 charset-normalizer==3.4.0
 click==8.1.7
@@ -85,6 +86,7 @@ pytz==2024.2
 PyYAML==6.0.1
 qrcode==7.4.2
 rcssmin==1.1.2
+redis==5.0.1
 redis==5.1.1
 requests==2.32.3
 rich==13.9.2
