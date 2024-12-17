@@ -637,118 +637,111 @@ def get_trading_news(request):
         return JsonResponse({"status": "error", "message": str(e)})
 
 @login_required
-@require_http_methods(["POST"])
+@require_http_methods(["POST", "GET"])
 def process_deposit(request):
     """Process deposit request"""
-    try:
-        data = json.loads(request.body)
-        amount = Decimal(str(data.get('amount', '0')))
-        payment_method = data.get('payment_method', '')
-
-        if amount < 10:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Minimum deposit amount is $10'
-            }, status=400)
-
-        if not payment_method:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Please select a payment method'
-            }, status=400)
-
-        user_profile = request.user.userprofile
-
-        # For PayPal payments, create a PayPal payment session
-        if payment_method.lower() == 'paypal':
-            paypal_dict = {
-                "business": settings.PAYPAL_RECEIVER_EMAIL,
-                "amount": str(amount),
-                "item_name": "AI Trading Platform - Account Deposit",
-                "invoice": str(uuid.uuid4()),
-                "notify_url": request.build_absolute_uri(reverse('paypal-ipn')),
-                "return": request.build_absolute_uri(reverse('trading:payment_success')),
-                "cancel_return": request.build_absolute_uri(reverse('trading:payment_cancelled')),
-                "custom": str(request.user.id),  # Pass user ID for IPN
-                "currency_code": "USD",
-                "no_shipping": "1"  # No shipping address needed for digital goods
-            }
-            form = PayPalPaymentsForm(initial=paypal_dict)
-            return JsonResponse({
-                'status': 'redirect',
-                'url': form.render().split('action="')[1].split('"')[0]
-            })
-
-        # For bank transfer, return instructions
-        elif payment_method.lower() == 'bank_transfer':
-            return JsonResponse({
-                'status': 'instructions',
-                'message': 'Please transfer the amount to our bank account:',
-                'details': {
-                    'bank_name': 'Example Bank',
-                    'account_number': 'XXXXXXXXXXXX',
-                    'routing_number': 'XXXXXXXXX',
-                    'reference': f'DEP-{request.user.id}-{int(time.time())}'
-                }
-            })
-
-        # For crypto payments
-        elif payment_method.lower() == 'crypto':
-            return JsonResponse({
-                'status': 'instructions',
-                'message': 'Please send the crypto to the following address:',
-                'details': {
-                    'btc_address': 'XXXXXXXXXXXXXXXXXXXXX',
-                    'eth_address': 'XXXXXXXXXXXXXXXXXXXXX',
-                    'reference': f'DEP-{request.user.id}-{int(time.time())}'
-                }
-            })
-
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Unsupported payment method'
-        }, status=400)
-
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Invalid JSON data'
-        }, status=400)
-    except decimal.InvalidOperation:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Invalid amount'
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Deposit error: {str(e)}")
-        return JsonResponse({
-            'status': 'error',
-            'message': 'An error occurred processing your deposit'
-        }, status=500)
-
-@login_required
-def get_balance(request):
-    try:
-        trading_account = AccountBalance.objects.get(user=request.user.userprofile)
-        return JsonResponse({
-            'status': 'success',
-            'balance': float(trading_account.balance_usd)
-        })
-    except AccountBalance.DoesNotExist:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Trading account not found'
-        })
-
-@login_required
-@require_http_methods(['POST'])
-def process_withdrawal(request):
-    """Process withdrawal requests with KYC/AML checks"""
     if request.method == 'POST':
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            try:
+                data = json.loads(request.body)
+                amount = Decimal(str(data.get('amount', '0')))
+                payment_method = data.get('payment_method')
+
+                if amount < 10:
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'Minimum deposit amount is $10'
+                    }, status=400)
+
+                if not payment_method:
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'Please select a payment method'
+                    }, status=400)
+
+                # Create deposit record
+                deposit = Deposit.objects.create(
+                    user=request.user,
+                    amount=amount,
+                    payment_method=payment_method,
+                    status='pending'
+                )
+
+                # For PayPal payments
+                if payment_method.lower() == 'paypal':
+                    paypal_dict = {
+                        "business": settings.PAYPAL_RECEIVER_EMAIL,
+                        "amount": str(amount),
+                        "item_name": "AI Trading Platform - Account Deposit",
+                        "invoice": str(deposit.id),
+                        "notify_url": request.build_absolute_uri(reverse('paypal-ipn')),
+                        "return": request.build_absolute_uri(reverse('trading:deposit_success')),
+                        "cancel_return": request.build_absolute_uri(reverse('trading:deposit_cancelled')),
+                        "custom": str(request.user.id),
+                        "currency_code": "USD",
+                    }
+                    form = PayPalPaymentsForm(initial=paypal_dict)
+                    return JsonResponse({
+                        'status': 'success',
+                        'redirect_url': form.render().split('action="')[1].split('"')[0]
+                    })
+
+                # For bank transfer
+                elif payment_method.lower() == 'bank_transfer':
+                    return JsonResponse({
+                        'status': 'success',
+                        'message': 'Bank transfer request received',
+                        'details': {
+                            'bank_name': 'Example Bank',
+                            'account_number': 'XXXXXXXXXXXX',
+                            'reference': f'DEP-{deposit.id}'
+                        }
+                    })
+
+                # For crypto
+                elif payment_method.lower() == 'crypto':
+                    return JsonResponse({
+                        'status': 'success',
+                        'message': 'Crypto deposit request received',
+                        'details': {
+                            'wallet_address': 'XXXXXXXXXXXXX',
+                            'reference': f'DEP-{deposit.id}'
+                        }
+                    })
+
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Invalid payment method'
+                }, status=400)
+
+            except (json.JSONDecodeError, decimal.InvalidOperation) as e:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': str(e)
+                }, status=400)
+            except Exception as e:
+                logger.error(f"Deposit error: {str(e)}")
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'An error occurred processing your deposit'
+                }, status=500)
+        else:
+            # Handle regular form submission
+            return redirect('trading:deposit_success')
+    
+    # GET request - render deposit form
+    return render(request, 'trading/deposit.html')
+
+@login_required
+@require_http_methods(["POST"])
+def process_withdrawal(request):
+    """Process withdrawal request"""
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         try:
             data = json.loads(request.body)
             amount = Decimal(str(data.get('amount', '0')))
             withdrawal_method = data.get('withdrawal_method')
+            address = data.get('address')
 
             if amount <= 0:
                 return JsonResponse({
@@ -756,97 +749,51 @@ def process_withdrawal(request):
                     'message': 'Invalid withdrawal amount'
                 }, status=400)
 
-            user_profile = request.user.userprofile
+            # Get user's trading account
+            try:
+                trading_account = TradingAccount.objects.get(user=request.user)
+            except TradingAccount.DoesNotExist:
+                trading_account = TradingAccount.objects.create(user=request.user)
 
             # Check if user has sufficient balance
-            if user_profile.balance < amount:
+            if trading_account.balance < amount:
                 return JsonResponse({
                     'status': 'error',
                     'message': 'Insufficient funds'
                 }, status=400)
 
-            # Check KYC status for withdrawals over $1000
-            if amount > 1000:
-                try:
-                    kyc = KYCVerification.objects.get(user=request.user)
-                    if kyc.verification_status != 'approved':
-                        return JsonResponse({
-                            'status': 'error',
-                            'message': 'KYC verification required for withdrawals over $1,000',
-                            'kyc_status': kyc.verification_status
-                        }, status=403)
-                except KYCVerification.DoesNotExist:
-                    return JsonResponse({
-                        'status': 'error',
-                        'message': 'KYC verification required for withdrawals over $1,000',
-                        'kyc_status': 'not_submitted'
-                    }, status=403)
-
             # Create withdrawal request
-            withdrawal = WithdrawalRequest.objects.create(
+            withdrawal = Withdrawal.objects.create(
                 user=request.user,
                 amount=amount,
-                withdrawal_method=withdrawal_method
+                method=withdrawal_method,
+                address=address,
+                status='pending'
             )
 
-            # Add withdrawal-specific details based on method
-            if withdrawal_method == 'bank_transfer':
-                withdrawal.bank_name = data.get('bank_name')
-                withdrawal.account_number = data.get('account_number')
-                withdrawal.routing_number = data.get('routing_number')
-            elif withdrawal_method == 'paypal':
-                withdrawal.paypal_email = data.get('paypal_email')
-            elif withdrawal_method == 'crypto':
-                withdrawal.crypto_address = data.get('crypto_address')
-                withdrawal.crypto_network = data.get('crypto_network')
-            
-            withdrawal.save()
+            # Deduct amount from trading account
+            trading_account.balance -= amount
+            trading_account.save()
 
-            # Perform AML check
-            aml_status = perform_aml_check(withdrawal)
-            withdrawal.aml_check_status = aml_status
-            withdrawal.aml_check_date = timezone.now()
-            withdrawal.save()
-
-            if aml_status == 'flagged':
-                return JsonResponse({
-                    'status': 'error',
-                    'message': 'Withdrawal flagged for review. Our team will contact you.',
-                    'withdrawal_id': withdrawal.id
-                }, status=403)
-
-            # If all checks pass, process the withdrawal
-            if aml_status == 'passed':
-                # Reserve the amount
-                user_profile.balance -= amount
-                user_profile.save()
-
-                # Record the transaction
-                Transaction.objects.create(
-                    user=user_profile,
-                    transaction_type='withdrawal',
-                    amount=amount,
-                    status='pending',
-                    payment_method=withdrawal_method
-                )
-
-                return JsonResponse({
-                    'status': 'success',
-                    'message': 'Withdrawal request processed successfully',
-                    'withdrawal_id': withdrawal.id,
-                    'new_balance': float(user_profile.balance)
-                })
+            # Create transaction record
+            Transaction.objects.create(
+                user=request.user,
+                transaction_type='withdrawal',
+                amount=amount,
+                status='pending',
+                reference=f'WD-{withdrawal.id}'
+            )
 
             return JsonResponse({
-                'status': 'pending',
-                'message': 'Withdrawal request is being processed',
+                'status': 'success',
+                'message': 'Withdrawal request submitted successfully',
                 'withdrawal_id': withdrawal.id
             })
 
-        except (json.JSONDecodeError, decimal.InvalidOperation):
+        except (json.JSONDecodeError, decimal.InvalidOperation) as e:
             return JsonResponse({
                 'status': 'error',
-                'message': 'Invalid withdrawal data'
+                'message': str(e)
             }, status=400)
         except Exception as e:
             logger.error(f"Withdrawal error: {str(e)}")
@@ -854,81 +801,11 @@ def process_withdrawal(request):
                 'status': 'error',
                 'message': 'An error occurred processing your withdrawal'
             }, status=500)
-
+    
     return JsonResponse({
         'status': 'error',
-        'message': 'Invalid request method'
-    }, status=405)
-
-@login_required
-@require_http_methods(['POST'])
-def process_withdrawal_view(request):
-    try:
-        data = json.loads(request.body)
-        amount = Decimal(data.get('amount'))
-        method = data.get('method')
-        address = data.get('address')
-
-        # Validate amount
-        if amount < Decimal('10.00'):
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Minimum withdrawal amount is $10.00'
-            })
-
-        # Get user's trading account
-        trading_account = TradingAccount.objects.get(user=request.user)
-        
-        # Check if user has sufficient balance
-        if trading_account.balance < amount:
-            return JsonResponse({
-                'status': 'error',
-                'message': 'Insufficient balance'
-            })
-
-        # Create withdrawal request
-        withdrawal = Withdrawal.objects.create(
-            user=request.user,
-            amount=amount,
-            method=method,
-            address=address,
-            status='pending'
-        )
-
-        # Deduct amount from trading account
-        trading_account.balance -= amount
-        trading_account.save()
-
-        # Create transaction record
-        Transaction.objects.create(
-            user=request.user,
-            transaction_type='withdrawal',
-            amount=amount,
-            status='completed',
-            reference=f'WD-{withdrawal.id}'
-        )
-
-        return JsonResponse({
-            'status': 'success',
-            'message': 'Withdrawal request submitted successfully',
-            'withdrawal_id': withdrawal.id
-        })
-
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Invalid request data'
-        })
-    except TradingAccount.DoesNotExist:
-        return JsonResponse({
-            'status': 'error',
-            'message': 'Trading account not found'
-        })
-    except Exception as e:
-        return JsonResponse({
-            'status': 'error',
-            'message': str(e)
-        })
+        'message': 'Invalid request'
+    }, status=400)
 
 def perform_aml_check(withdrawal):
     """
@@ -940,7 +817,7 @@ def perform_aml_check(withdrawal):
     amount = withdrawal.amount
     
     # Get user's transaction history
-    recent_withdrawals = WithdrawalRequest.objects.filter(
+    recent_withdrawals = Withdrawal.objects.filter(
         user=user,
         request_date__gte=timezone.now() - timezone.timedelta(days=30)
     ).aggregate(total=Sum('amount'))
@@ -957,7 +834,7 @@ def perform_aml_check(withdrawal):
     if monthly_withdrawal_total > 20000:
         return 'flagged'
     
-    recent_count = WithdrawalRequest.objects.filter(
+    recent_count = Withdrawal.objects.filter(
         user=user,
         request_date__gte=timezone.now() - timezone.timedelta(hours=24)
     ).count()
@@ -1090,14 +967,14 @@ def update_trading_parameters(request):
         user_profile = UserProfile.objects.get(user=request.user)
         
         # Get parameters from request
-        data = request.data
+        data = json.loads(request.body) if isinstance(request.body, bytes) else request.data
         logger.info(f"Received parameters: {data}")
         
         # Validate parameters
         try:
-            trade_amount = float(data.get('tradeAmount', 0))
-            min_price = float(data.get('minPrice', 0))
-            max_price = float(data.get('maxPrice', 0))
+            trade_amount = float(data.get('trade_amount', 0))
+            min_price = float(data.get('min_price', 0))
+            max_price = float(data.get('max_price', 0))
             
             if trade_amount <= 0:
                 return JsonResponse({'error': 'Trade amount must be greater than 0'}, status=400)
@@ -1114,6 +991,7 @@ def update_trading_parameters(request):
         user_profile.trade_amount = trade_amount
         user_profile.min_price = min_price
         user_profile.max_price = max_price
+        user_profile.automated_trading_enabled = True  # Enable trading when parameters are updated
         user_profile.save()
         
         logger.info(f"Trading parameters updated for user {request.user.username}")
@@ -1150,7 +1028,7 @@ def trading_status(request):
         total_trades = completed_trades.count()
         
         response_data = {
-            'is_trading': user_profile.automated_trading_enabled,
+            'is_trading': user_profile.automated_trading_enabled,  # Match the field name expected by frontend
             'active_trades': active_trades,
             'total_profit': 0,
             'win_rate': 0,
@@ -1226,99 +1104,18 @@ def paypal_ipn(request):
         logger.error(f"PayPal IPN error: {str(e)}")
         return HttpResponse("ERROR")
 
-@csrf_exempt
-@require_http_methods(["POST"])
-@login_required
-def process_deposit(request):
-    try:
-        data = json.loads(request.body)
-        amount = Decimal(str(data.get('amount', '0')))
-        payment_method = data.get('payment_method')
-
-        if not amount or amount <= 0:
-            return JsonResponse({
-                'error': 'Invalid deposit amount'
-            }, status=400)
-
-        if amount < 10:  # Minimum deposit amount
-            return JsonResponse({
-                'error': 'Minimum deposit amount is $10'
-            }, status=400)
-
-        # Get or create trading account
-        trading_account, _ = TradingAccount.objects.get_or_create(user=request.user)
-
-        # Create deposit record
-        deposit = Deposit.objects.create(
-            user=request.user,
-            amount=amount,
-            payment_method=payment_method,
-            status='pending'
-        )
-
-        if payment_method == 'paypal':
-            # Generate PayPal payment URL
-            paypal_dict = {
-                "business": settings.PAYPAL_RECEIVER_EMAIL,
-                "amount": str(amount),
-                "item_name": f"Deposit to Trading Account - {request.user.username}",
-                "invoice": str(deposit.id),
-                "notify_url": request.build_absolute_uri(reverse('paypal-ipn')),
-                "return": request.build_absolute_uri(reverse('trading:deposit-success')),
-                "cancel_return": request.build_absolute_uri(reverse('trading:deposit-cancelled')),
-                "custom": str(request.user.id)
-            }
-            
-            form = PayPalPaymentsForm(initial=paypal_dict)
-            return JsonResponse({
-                'redirect_url': form.render().split('action="')[1].split('"')[0]
-            })
-        
-        elif payment_method == 'bank_transfer':
-            # Return bank transfer instructions
-            return JsonResponse({
-                'message': 'Bank transfer request received',
-                'instructions': {
-                    'bank_name': settings.BANK_NAME,
-                    'account_number': settings.BANK_ACCOUNT_NUMBER,
-                    'reference': f"DEP-{deposit.id}"
-                }
-            })
-        
-        elif payment_method == 'crypto':
-            # Return cryptocurrency payment details
-            return JsonResponse({
-                'message': 'Cryptocurrency deposit request received',
-                'instructions': {
-                    'wallet_address': settings.CRYPTO_WALLET_ADDRESS,
-                    'reference': f"DEP-{deposit.id}"
-                }
-            })
-        
-        return JsonResponse({
-            'error': 'Invalid payment method'
-        }, status=400)
-
-    except json.JSONDecodeError:
-        return JsonResponse({
-            'error': 'Invalid JSON data'
-        }, status=400)
-    except ValueError as e:
-        return JsonResponse({
-            'error': str(e)
-        }, status=400)
-    except Exception as e:
-        logger.error(f"Deposit processing error: {str(e)}")
-        return JsonResponse({
-            'error': 'An error occurred while processing your deposit'
-        }, status=500)
-
 @login_required
 def deposit_success(request):
     """Handle successful deposit"""
-    return render(request, 'trading/deposit_success.html', {
-        'message': 'Your deposit was successful! The funds will be credited to your account shortly.'
-    })
+    try:
+        return render(request, 'trading/deposit_success.html', {
+            'message': 'Your deposit was successful!'
+        })
+    except Exception as e:
+        logger.error(f"Error in deposit success view: {str(e)}")
+        return JsonResponse({
+            'error': 'An error occurred while processing your deposit success'
+        }, status=500)
 
 @login_required
 def deposit_cancelled(request):

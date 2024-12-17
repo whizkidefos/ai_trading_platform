@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block title %}Deposit Successful{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-check-circle text-success fa-4x mb-3"></i>
+                    <h2 class="card-title">Deposit Successful!</h2>
+                    <p class="card-text">{{ message }}</p>
+                    <p class="text-muted">The funds will be credited to your account shortly.</p>
+                    <div class="mt-4">
+                        <a href="{% url 'trading:user_dashboard' %}" class="btn btn-primary">Return to Dashboard</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

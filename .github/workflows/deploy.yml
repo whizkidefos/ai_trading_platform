@@ -1,0 +1,59 @@
+name: Deploy AI Trading Platform
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-django coverage
+        
+    - name: Run tests
+      env:
+        DJANGO_SETTINGS_MODULE: ai_trading_platform.settings
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+        ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+        ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      run: |
+        python manage.py test
+        
+    - name: Deploy to Heroku
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      env:
+        HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+      run: |
+        curl https://cli-assets.heroku.com/install.sh | sh
+        heroku container:login
+        heroku container:push web -a your-app-name
+        heroku container:release web -a your-app-name

@@ -278,64 +278,6 @@
     <div class="content-wrapper {% if request.resolver_match.url_name in 'login,register' %}auth{% else %}dashboard{% endif %}">
         <div class="content-inner {% if request.resolver_match.url_name in 'login,register' %}card auth-card{% endif %}">
             {% block content %}{% endblock %}
-            <div class="trading-controls">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="tradingSwitch">
-                    <label class="form-check-label" for="tradingSwitch">Automated Trading</label>
-                </div>
-                
-                <div id="tradingForm" style="display: none;">
-                    <form id="tradingParamsForm" class="mt-3">
-                        <div class="mb-3">
-                            <label for="tradeAmount" class="form-label">Trade Amount ($)</label>
-                            <input type="number" class="form-control" id="tradeAmount" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="minPrice" class="form-label">Minimum Price ($)</label>
-                            <input type="number" class="form-control" id="minPrice" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="maxPrice" class="form-label">Maximum Price ($)</label>
-                            <input type="number" class="form-control" id="maxPrice" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Update Parameters</button>
-                    </form>
-                </div>
-                
-                <div id="stopButtonContainer" class="mt-3"></div>
-                
-                <div id="tradingMetrics" class="mt-4">
-                    <h4>Trading Metrics</h4>
-                    <div class="card">
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-3">
-                                    <h6>Active Trades</h6>
-                                    <p id="activeTrades">0</p>
-                                </div>
-                                <div class="col-md-3">
-                                    <h6>Total Profit</h6>
-                                    <p>$<span id="totalProfit">0.00</span></p>
-                                </div>
-                                <div class="col-md-3">
-                                    <h6>Win Rate</h6>
-                                    <p><span id="winRate">0.0</span>%</p>
-                                </div>
-                            </div>
-                            
-                            <div class="mt-3">
-                                <h6>Last Trade</h6>
-                                <div class="row">
-                                    <div class="col-md-3">Type: <span id="lastTradeType">-</span></div>
-                                    <div class="col-md-3">Amount: $<span id="lastTradeAmount">-</span></div>
-                                    <div class="col-md-3">Price: $<span id="lastTradePrice">-</span></div>
-                                    <div class="col-md-3">Time: <span id="lastTradeTime">-</span></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 

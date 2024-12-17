@@ -212,15 +212,51 @@ function getCookie(name) {
     return cookieValue;
 }
 
+// Helper function to determine if we're in development
+function isDevelopment() {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+}
+
+// Helper function to get the correct protocol
+function getProtocol() {
+    return isDevelopment() ? 'http:' : 'https:';
+}
+
+// Helper function to make API calls
+async function makeApiCall(endpoint, method = 'GET', data = null) {
+    const protocol = getProtocol();
+    const baseUrl = `${protocol}//${window.location.host}`;
+    const url = `${baseUrl}${endpoint}`;
+    
+    const options = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        credentials: 'same-origin'
+    };
+
+    if (data) {
+        options.body = JSON.stringify(data);
+    }
+
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('API call failed:', error);
+        throw error;
+    }
+}
+
 // Function to update trading status
 async function updateTradingStatus() {
     try {
-        const response = await fetch('/trading/api/v1/trading/status/');
-        if (!response.ok) {
-            throw new Error('Failed to fetch trading status');
-        }
-        
-        const data = await response.json();
+        const data = await makeApiCall('/trading/api/v1/trading/status/');
         console.log('Trading status data:', data);
         
         // Update switch state
@@ -277,17 +313,10 @@ async function startTrading() {
         const maxPrice = document.getElementById('maxPrice').value;
 
         // First update the parameters
-        const paramsResponse = await fetch('/trading/api/v1/trading/update-parameters/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            },
-            body: JSON.stringify({
-                trade_amount: tradeAmount,
-                min_price: minPrice,
-                max_price: maxPrice
-            })
+        const paramsResponse = await makeApiCall('/trading/api/v1/trading/update-parameters/', 'POST', {
+            trade_amount: tradeAmount,
+            min_price: minPrice,
+            max_price: maxPrice
         });
 
         if (!paramsResponse.ok) {
@@ -295,13 +324,7 @@ async function startTrading() {
         }
 
         // Then start trading
-        const startResponse = await fetch('/trading/api/v1/trading/start/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            }
-        });
+        const startResponse = await makeApiCall('/trading/api/v1/trading/start/', 'POST');
 
         if (!startResponse.ok) {
             throw new Error('Failed to start trading');
@@ -321,13 +344,7 @@ async function startTrading() {
 // Function to stop trading
 async function stopTrading() {
     try {
-        const response = await fetch('/trading/api/v1/trading/stop/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            }
-        });
+        const response = await makeApiCall('/trading/api/v1/trading/stop/', 'POST');
 
         if (!response.ok) {
             throw new Error('Failed to stop trading');
@@ -374,6 +391,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const autoSwitch = document.getElementById('autoTradingSwitch');
     const tradingForm = document.getElementById('tradingParametersForm');
     const tradingParamsForm = document.getElementById('tradingForm');
+    const depositForm = document.getElementById('depositForm');
+    const withdrawForm = document.getElementById('withdrawForm');
 
     if (autoSwitch) {
         autoSwitch.addEventListener('change', function() {
@@ -389,36 +408,83 @@ document.addEventListener('DOMContentLoaded', function() {
         tradingParamsForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            if (!isAutomatedTradingActive) {
-                await startTrading();
-            } else {
-                const tradeAmount = document.getElementById('tradeAmount').value;
-                const minPrice = document.getElementById('minPrice').value;
-                const maxPrice = document.getElementById('maxPrice').value;
+            const tradeAmount = document.getElementById('tradeAmount').value;
+            const minPrice = document.getElementById('minPrice').value;
+            const maxPrice = document.getElementById('maxPrice').value;
 
-                try {
-                    const response = await fetch('/trading/api/v1/trading/update-parameters/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': getCookie('csrftoken')
-                        },
-                        body: JSON.stringify({
-                            trade_amount: tradeAmount,
-                            min_price: minPrice,
-                            max_price: maxPrice
-                        })
-                    });
+            try {
+                const response = await makeApiCall('/trading/api/v1/trading/update-parameters/', 'POST', {
+                    trade_amount: parseFloat(tradeAmount),
+                    min_price: parseFloat(minPrice),
+                    max_price: parseFloat(maxPrice)
+                });
 
-                    if (!response.ok) {
-                        throw new Error('Failed to update parameters');
-                    }
+                showNotification('Trading parameters updated successfully', 'success');
+                await updateTradingStatus();
+            } catch (error) {
+                console.error('Error updating parameters:', error);
+                showNotification('Failed to update parameters: ' + error.message, 'error');
+            }
+        });
+    }
 
-                    showNotification('Trading parameters updated successfully', 'success');
-                } catch (error) {
-                    console.error('Error updating parameters:', error);
-                    showNotification('Failed to update parameters: ' + error.message, 'error');
+    // Handle deposit form submission
+    if (depositForm) {
+        depositForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const amount = document.getElementById('depositAmount').value;
+            const method = document.getElementById('depositMethod').value;
+
+            try {
+                const response = await makeApiCall('/trading/api/v1/account/deposit/', 'POST', {
+                    amount: parseFloat(amount),
+                    payment_method: method
+                });
+
+                // Handle successful deposit
+                if (response.redirect_url) {
+                    window.location.href = response.redirect_url;
+                } else {
+                    showNotification('Deposit request submitted successfully', 'success');
+                    // Close the modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('depositModal'));
+                    if (modal) modal.hide();
+                    // Update account balance display
+                    await updateTradingStatus();
                 }
+            } catch (error) {
+                console.error('Error processing deposit:', error);
+                showNotification('Failed to process deposit: ' + error.message, 'error');
+            }
+        });
+    }
+
+    // Handle withdraw form submission
+    if (withdrawForm) {
+        withdrawForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const amount = document.getElementById('withdrawAmount').value;
+            const method = document.getElementById('withdrawMethod').value;
+            const address = document.getElementById('withdrawAddress').value;
+
+            try {
+                const response = await makeApiCall('/trading/api/v1/account/withdraw/', 'POST', {
+                    amount: parseFloat(amount),
+                    withdrawal_method: method,
+                    address: address
+                });
+
+                showNotification('Withdrawal request submitted successfully', 'success');
+                
+                // Close the modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('withdrawModal'));
+                if (modal) modal.hide();
+                
+                // Update account balance display
+                await updateTradingStatus();
+            } catch (error) {
+                console.error('Error processing withdrawal:', error);
+                showNotification('Failed to process withdrawal: ' + error.message, 'error');
             }
         });
     }

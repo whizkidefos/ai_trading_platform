@@ -46,6 +46,7 @@ frozenlist==1.4.1
 gast==0.6.0
 google-pasta==0.2.0
 grpcio==1.66.2
+gunicorn==21.2.0
 h5py==3.12.1
 html5lib==1.1
 idna==3.10
@@ -77,6 +78,7 @@ platformdirs==4.3.6
 prompt_toolkit==3.0.48
 propcache==0.2.0
 protobuf==4.25.5
+psycopg2-binary==2.9.9
 pycparser==2.22
 Pygments==2.18.0
 pypng==0.20220715.0
@@ -116,6 +118,9 @@ websocket-client==1.8.0
 websockets==10.4
 Werkzeug==3.0.4
 wheel==0.44.0
+whitenoise==6.6.0
 wrapt==1.16.0
 yarl==1.15.0
 yfinance==0.2.50
+dj-database-url==2.1.0
+django-heroku==0.3.1
