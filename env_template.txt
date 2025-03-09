@@ -1,0 +1,23 @@
+# Django Settings
+SECRET_KEY=django-insecure-yoursecretkey123456789abcdefghijklmnopqrstuvwxyz
+DEBUG=True
+
+# API Keys
+ALPHA_VANTAGE_API_KEY=your_alpha_vantage_api_key
+ALPACA_API_KEY=your_alpaca_api_key
+ALPACA_SECRET_KEY=your_alpaca_secret_key
+ALPACA_BASE_URL=https://paper-api.alpaca.markets  # Use paper URL for testing
+
+# Payment Settings
+PAYPAL_RECEIVER_EMAIL=your-paypal-business-email@example.com
+PAYPAL_CLIENT_ID=your_paypal_client_id
+
+# Bank Transfer Settings
+BANK_NAME=Example Bank
+BANK_ACCOUNT_NUMBER=1234567890
+
+# Cryptocurrency Settings
+CRYPTO_WALLET_ADDRESS=your-crypto-wallet-address
+
+# Redis Settings (for production)
+# REDIS_URL=redis://localhost:6379

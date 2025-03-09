@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.db.models import Sum, Q, Count, Max, Min, Avg
 from django.contrib import messages
 from django.utils import timezone
+from django.contrib.auth import login
 from decimal import Decimal
 import json
 import logging
@@ -34,6 +35,7 @@ from .models import (
     Deposit,
     TradingAccount
 )
+from .forms import UserRegistrationForm, UserForm, UserProfileForm
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +365,7 @@ def edit_profile(request):
             user_form.save()
             profile_form.save()
             messages.success(request, 'Your profile has been updated successfully!')
-            return redirect('profile')
+            return redirect('trading:profile')
     else:
         user_form = UserForm(instance=request.user)
         profile_form = UserProfileForm(instance=request.user.userprofile)

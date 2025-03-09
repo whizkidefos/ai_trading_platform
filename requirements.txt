@@ -16,7 +16,6 @@ celery==5.3.6
 certifi==2024.8.30
 cffi==1.17.1
 channels==4.0.0
-channels_redis==4.1.0
 channels_redis==4.2.1
 charset-normalizer==3.4.0
 click==8.1.7
@@ -28,10 +27,12 @@ cryptography==43.0.1
 cssselect2==0.7.0
 defusedxml==0.7.1
 deprecation==2.1.0
+dj-database-url==2.1.0
 Django==5.1.2
 django-appconf==1.0.6
 django-compressor==4.5.1
 django-formtools==2.5.1
+django-heroku==0.3.1
 django-otp==1.5.4
 django-paypal==2.1
 django-phonenumber-field==8.0.0
@@ -61,12 +62,12 @@ Markdown==3.7
 markdown-it-py==3.0.0
 MarkupSafe==3.0.1
 mdurl==0.1.2
-ml-dtypes==0.4.1
+ml_dtypes==0.5.1
 msgpack==1.0.3
 multidict==6.1.0
 multitasking==0.0.11
 namex==0.0.8
-numpy==1.26.4
+numpy==2.2.3
 opt_einsum==3.4.0
 optree==0.13.0
 packaging==24.1
@@ -78,7 +79,7 @@ platformdirs==4.3.6
 prompt_toolkit==3.0.48
 propcache==0.2.0
 protobuf==4.25.5
-psycopg2-binary==2.9.9
+psycopg2==2.9.10
 pycparser==2.22
 Pygments==2.18.0
 pypng==0.20220715.0
@@ -88,7 +89,6 @@ pytz==2024.2
 PyYAML==6.0.1
 qrcode==7.4.2
 rcssmin==1.1.2
-redis==5.0.1
 redis==5.1.1
 requests==2.32.3
 rich==13.9.2
@@ -102,8 +102,6 @@ sqlparse==0.5.1
 stripe==11.1.0
 tensorboard==2.17.1
 tensorboard-data-server==0.7.2
-tensorflow==2.17.0
-tensorflow-intel==2.17.0
 termcolor==2.5.0
 threadpoolctl==3.5.0
 tinycss2==1.4.0
@@ -122,5 +120,3 @@ whitenoise==6.6.0
 wrapt==1.16.0
 yarl==1.15.0
 yfinance==0.2.50
-dj-database-url==2.1.0
-django-heroku==0.3.1
